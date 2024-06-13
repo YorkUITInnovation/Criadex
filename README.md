@@ -2,8 +2,6 @@
 
 A semantic search engine developed by [UIT Innovation](https://github.com/YorkUITInnovation) at [York University](https://yorku.ca/) with a targetted focus on generative AI for higher education.
 
-<img src="/.github/images/api-preview.png" alt="API Preview" width="80%">
-
 ## 🎯 Purpose
 
 Criadex is an AI-powered search engine designed to apply a modern approach to semantic-based document search using vector databases. 
