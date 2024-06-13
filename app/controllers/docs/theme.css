@@ -1,0 +1,105 @@
+@import url("https://unpkg.com/swagger-ui-dist/swagger-ui.css");
+
+:root {
+    --background-primary: #24292d;
+    --background-secondary: rgb(26 27 35);
+    --color-primary: #eaeaea;
+}
+
+h2.title > span {
+    visibility: hidden;
+}
+
+.swagger-ui .scheme-container {
+    padding: 0 !important;
+}
+hgroup.main > a {
+    display: none;
+}
+
+
+@keyframes jump {
+    25% {
+        rotate: -15deg;
+    }
+    50% {
+        padding-bottom: 10px;
+    }
+    75% {
+        rotate: 7deg;
+    }
+    90% {
+        padding-bottom: 0;
+    }
+}
+
+
+.info div.renderedMarkdown img {
+    cursor: pointer;
+}
+
+.info div.renderedMarkdown img:hover {
+    animation: jump 1000ms infinite;
+}
+
+
+.hierarchical-operation-tags {
+    border-color: rgba(59,65,81,.3) !important;
+}
+
+body, .swagger-ui .dialog-ux .modal-ux {
+    background: var(--background-primary);
+    color: var(--color-primary) !important;
+}
+
+
+.swagger-ui .info .title, p, div, span, th, td, tr, h1, h2, h3, h4, h5, button, label {
+    color: var(--color-primary) !important;
+}
+
+.opblock-section-header {
+    background: hsla(0,0%,-100%,0.5) !important;
+    color: var(--color-primary) !important;
+}
+
+svg {
+    filter: invert(0.9);
+}
+
+button {
+    background: inherit;
+}
+
+.swagger-ui article {
+    background: rgba(0,0,0,0.25) !important;
+}
+
+.swagger-ui .scheme-container {
+    background: transparent;
+    box-shadow: none;
+}
+.swagger-ui .btn.authorize svg {
+    filter: none !important;
+}
+.swagger-ui .json-schema-2020-12__attribute--primary {
+    color: #90c0e2;
+}
+
+.swagger-ui .response-control-media-type__accept-message {
+    color: #c1e7b8;
+}
+
+pre.microlight  {
+    background: var(--background-secondary) !important;
+}
+.swagger-ui .parameter__name.required:after {
+    color: rgb(226, 124, 124);
+}
+
+input.file {
+    color: black;
+}
+
+div.loading {
+    filter: invert(0.8);
+}

@@ -1,0 +1,15 @@
+# JetBrains
+.idea
+.venv
+
+# Sensitive Files
+*.pdf
+*.docs
+*.env
+.env
+
+# Cache Files
+tiktoken
+
+
+

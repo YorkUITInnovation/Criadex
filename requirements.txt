@@ -1,0 +1,23 @@
+python-multipart>=0.0.6
+fastapi==0.109.2
+llama-index-core
+qdrant-client==1.7.3
+aiomysql==0.2.0
+slowapi==0.1.9
+uvicorn==0.24.0.post1
+python-dotenv==1.0.0
+pydantic==1.10.12  # Force V1 due to langchain
+python-docx==1.1.0
+cryptography==41.0.5
+lingua-language-detector==2.0.2
+llama-index-embeddings-azure-openai==0.1.6
+llama-index-llms-azure-openai==0.1.4
+llama-index-postprocessor-rankgpt-rerank==0.1.2
+llama-index-vector-stores-qdrant==0.1.1
+cohere==4.50
+fastapi-utils==0.2.1
+pandas==2.2.0
+pyarrow==15.0.0
+tabulate==0.9.0
+urlextract==1.8.0
+html5lib==1.1
