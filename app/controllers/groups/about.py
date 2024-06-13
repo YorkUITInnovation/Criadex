@@ -23,13 +23,13 @@ from starlette.requests import Request
 from app.controllers.schemas import catch_exceptions, APIResponse, SUCCESS, GROUP_NOT_FOUND, ERROR
 from app.core.route import CriaRoute
 from criadex.database.tables.groups import GroupsModel
-from criadex.schemas import GroupNotFoundError, IndexType
+from criadex.schemas import GroupNotFoundError, IndexType, IndexTypeKeys
 
 view = APIRouter()
 
 
 class GroupsPublicModel(GroupsModel):
-    type: IndexType
+    type: IndexTypeKeys
 
 
 class GroupAboutResponse(APIResponse):

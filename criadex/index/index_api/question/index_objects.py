@@ -170,7 +170,7 @@ class QuestionCohereRerank(CohereRerankPostprocessor):
         # Create the Q&A pair
         for idx, node in enumerate(nodes):
             answer = node.metadata.get(QUESTION_NODE_ANSWER_KEY)
-            node.node.text = f"Q: {node.text}\nA: {answer}"
+            node.node.text = f"{node.text}\n{answer}"
 
         response_nodes: List[NodeWithScore] = await super().postprocess_nodes(deduped_nodes, query_bundle)
 
