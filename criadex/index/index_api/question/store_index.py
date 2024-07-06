@@ -14,13 +14,9 @@ You should have received a copy of the GNU General Public License along with Cri
 
 """
 
-import json
-
 from criadex.index.index_api.document.store_index import DocumentVectorStoreIndex
+from criadex.index.index_api.question.index_objects import QuestionConfig, QUESTION_NODE_ANSWER_KEY, QUESTION_NODE_LLM_REPLY
 from criadex.index.llama_objects.schemas import CriadexFile
-
-QUESTION_NODE_ANSWER_KEY: str = "answer"
-QUESTION_NODE_LLM_REPLY: str = "llm_reply"  # Make sure if changing to update in Criabot
 
 
 class QuestionVectorStoreIndex(DocumentVectorStoreIndex):
@@ -39,7 +35,7 @@ class QuestionVectorStoreIndex(DocumentVectorStoreIndex):
 
         return CriadexFile.create(
             file_name="seed-file",
-            text=json.dumps(["seed-question"]),
+            text=QuestionConfig(questions=["seed-question"], answer="seed-answer").json(),
             file_group="seed-group",
             file_metadata={
                 QUESTION_NODE_ANSWER_KEY: "",

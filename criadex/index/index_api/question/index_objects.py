@@ -20,11 +20,15 @@ from typing import List, Sequence, Any, Optional
 from llama_index.core.node_parser import NodeParser
 from llama_index.core.node_parser.node_utils import build_nodes_from_splits
 from llama_index.core.schema import BaseNode, NodeWithScore, QueryBundle, Document, TextNode
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from .store_index import QUESTION_NODE_ANSWER_KEY
 from ...llama_objects.postprocessor import CohereRerankPostprocessor
 from ...llama_objects.schemas import CriadexFile
+
+
+class RelatedPrompt(BaseModel):
+    label: str
+    prompt: str
 
 
 class QuestionConfig(BaseModel):
@@ -36,6 +40,7 @@ class QuestionConfig(BaseModel):
     questions: List[str]
     answer: str
     llm_reply: bool = True
+    related_prompts: List[RelatedPrompt] = Field(default_factory=list)
 
 
 class QuestionParser(NodeParser):
@@ -176,3 +181,8 @@ class QuestionCohereRerank(CohereRerankPostprocessor):
 
         # Return nodes
         return response_nodes
+
+
+QUESTION_NODE_ANSWER_KEY: str = "answer"
+QUESTION_NODE_LLM_REPLY: str = "llm_reply"  # Make sure if changing to update in Criabot
+QUESTION_NODE_RELATED_PROMPTS: str = "related_prompts"

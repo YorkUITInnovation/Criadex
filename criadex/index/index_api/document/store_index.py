@@ -20,6 +20,7 @@ from typing import List, Any
 from llama_index.core.indices import VectorStoreIndex
 from llama_index.core.storage import StorageContext
 
+from criadex.index.index_api.document.index_objects import DocumentConfig, Element, ElementType
 from criadex.index.llama_objects.index_retriever import QdrantVectorIndexRetriever
 from criadex.index.llama_objects.schemas import CriadexFile
 from criadex.index.schemas import CriadexBaseIndex, ServiceConfig
@@ -41,7 +42,7 @@ class DocumentVectorStoreIndex(VectorStoreIndex, CriadexBaseIndex):
 
         return CriadexFile.create(
             file_name="seed-file",
-            text="seed-content",
+            text=DocumentConfig(nodes=[Element(type=ElementType.NARRATIVE_TEXT, text="seed-text")]).json(),
             file_group="seed-group",
             file_metadata=dict()
         )

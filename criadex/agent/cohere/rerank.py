@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 from criadex.criadex import Criadex
 from criadex.index.index_api.document.index import DocumentIndexAPI
 from criadex.index.index_api.document.index_objects import DocumentCohereRerank, MetadataKeys
-from criadex.index.index_api.question.store_index import QUESTION_NODE_ANSWER_KEY
+from ...index.index_api.question.index_objects import QUESTION_NODE_ANSWER_KEY
 from criadex.index.llama_objects.models import CriaCohereRerank
 from ..base_agent import BaseAgent, BaseAgentResponse
 from ...database.tables.models.cohere import CohereModelsModel

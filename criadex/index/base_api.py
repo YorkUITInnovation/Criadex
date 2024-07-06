@@ -33,6 +33,7 @@ from criadex.index.llama_objects.index_retriever import QdrantVectorIndexRetriev
 from criadex.index.llama_objects.models import CriaEmbedding, CriaAzureOpenAI, CriaCohereRerank
 from criadex.index.schemas import IndexResponse, \
     CriadexBaseIndex, SearchConfig, ServiceConfig, IndexFileDataInvalidError
+from .index_api.document.index_objects import FuzzyMetadataDuplicateRemovalPostProcessor, MetadataKeys
 from .llama_objects.postprocessor import AsyncBaseNodePostprocessor
 from .llama_objects.schemas import CriadexFile
 
@@ -67,6 +68,9 @@ class CriadexIndexAPI:
         self._storage_context: StorageContext = storage_context
         self._qdrant_client: QdrantClient = qdrant_client
         self._index: Optional[CriadexBaseIndex] = None
+        self._fuzzy: FuzzyMetadataDuplicateRemovalPostProcessor = FuzzyMetadataDuplicateRemovalPostProcessor(
+            target_metadata_key=MetadataKeys.WINDOW
+        )
 
     async def search(
             self,
@@ -131,6 +135,9 @@ class CriadexIndexAPI:
 
         # Top N
         nodes = nodes[:config.top_n]
+
+        # !!LAST!! remove fuzzy dupes
+        nodes = self._fuzzy.postprocess_nodes(nodes, query_bundle)
 
         # Min N
         return [node for node in nodes if node.score >= config.min_n]

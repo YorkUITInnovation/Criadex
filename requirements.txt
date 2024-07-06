@@ -1,7 +1,7 @@
 python-multipart>=0.0.6
 fastapi==0.109.2
 llama-index-core
-qdrant-client==1.7.3
+qdrant-client==1.10.0
 aiomysql==0.2.0
 slowapi==0.1.9
 uvicorn==0.24.0.post1
@@ -13,7 +13,7 @@ lingua-language-detector==2.0.2
 llama-index-embeddings-azure-openai==0.1.6
 llama-index-llms-azure-openai==0.1.4
 llama-index-postprocessor-rankgpt-rerank==0.1.2
-llama-index-vector-stores-qdrant==0.1.1
+llama-index-vector-stores-qdrant==0.2.10
 cohere==4.50
 fastapi-utils==0.2.1
 pandas==2.2.0

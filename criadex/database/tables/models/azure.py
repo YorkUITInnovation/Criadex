@@ -22,10 +22,13 @@ from criadex.database.schemas import TableModel, Table
 
 """Supported models from Azure OpenAI"""
 AZURE_MODELS: Type = Literal[
+    "dall-e-2",
+    "dall-e-3",
     "gpt-35-turbo",
     "gpt-35-turbo-16k",
     "gpt-4",
     "gpt-4-32k",
+    "gpt-4o",
     "text-embedding-ada-002",
     "text-embedding-ada-001",
     "text-embedding-3-large",

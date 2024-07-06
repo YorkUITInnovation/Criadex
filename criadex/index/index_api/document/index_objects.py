@@ -19,13 +19,13 @@ import enum
 import json
 import uuid
 from dataclasses import dataclass
-from typing import List, Sequence, Any
+from typing import List, Sequence, Any, Optional, Union
 
-from llama_index.core.base.embeddings.base import Embedding
 from llama_index.core.node_parser import NodeParser
 from llama_index.core.node_parser.node_utils import default_id_func
-from llama_index.core.schema import BaseNode, TextNode, Document, NodeRelationship
-from pydantic import BaseModel
+from llama_index.core.postprocessor.types import BaseNodePostprocessor
+from llama_index.core.schema import BaseNode, TextNode, Document, NodeRelationship, NodeWithScore
+from pydantic import BaseModel, Field
 
 from criadex.index.llama_objects.postprocessor import CohereRerankPostprocessor
 
@@ -96,6 +96,55 @@ class DocumentCohereRerank(CohereRerankPostprocessor):
     """
 
 
+class FuzzyMetadataDuplicateRemovalPostProcessor(BaseNodePostprocessor):
+    """
+    Remove duplicates
+
+    """
+
+    target_metadata_key: str = Field(
+        description="Target metadata key to replace node content with."
+    )
+
+    def __init__(self, target_metadata_key: str) -> None:
+        super().__init__(target_metadata_key=target_metadata_key)
+
+    @classmethod
+    def class_name(cls) -> str:
+        return "MetadataReplacementPostProcessor"
+
+    def postprocess_nodes(
+            self,
+            nodes: List[Union[TextNode, NodeWithScore]],
+            _=None,
+            __=None,
+    ):
+        return self._postprocess_nodes(nodes)
+
+    def _postprocess_nodes(
+            self,
+            nodes: List[TextNode],
+            _finished_reverse: bool = False
+    ):
+        deduped_nodes: List[TextNode] = []
+
+        for node in nodes:
+
+            for deduped_node in deduped_nodes:
+                window_str: Optional[str] = node.metadata.get(self.target_metadata_key)
+                if (window_str and deduped_node.text in window_str) and deduped_node.text not in node.text:
+                    node.metadata[self.target_metadata_key] = window_str.replace(deduped_node.text, "")
+
+            deduped_nodes.append(node)
+
+        deduped_nodes.reverse()
+
+        if not _finished_reverse:
+            return self._postprocess_nodes(deduped_nodes, True)
+
+        return deduped_nodes
+
+
 class DocumentParser(NodeParser):
     """
     Parser for the document index. Takes document nodes in the above format (based on unstructured-api) and outputs Llama-Index nodes
@@ -135,9 +184,6 @@ class DocumentParser(NodeParser):
             new_nodes: List[BaseNode] = self.build_nodes_from_document(
                 document=document
             )
-
-            for node in new_nodes:
-                node.metadata = document.metadata
 
             all_nodes.extend(new_nodes)
 

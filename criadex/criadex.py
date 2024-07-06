@@ -95,7 +95,7 @@ class Criadex:
             host=self._qdrant_credentials.host,
             port=self._qdrant_credentials.port,
             grpc_port=self._qdrant_credentials.grpc_port,
-            prefer_grpc=True
+            prefer_grpc=True,
         )
 
         # Async Vector DB Client

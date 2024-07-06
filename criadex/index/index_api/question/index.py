@@ -24,9 +24,8 @@ from criadex.index.llama_objects.models import CriaEmbedding, CriaAzureOpenAI, C
 from criadex.index.llama_objects.schemas import CriadexFile
 from criadex.index.llama_objects.vector_store import CriadexQdrantVectorStore
 from criadex.index.schemas import QdrantConfig, SearchConfig, ServiceConfig
-from .index_objects import QuestionConfig, QuestionParser, QuestionCohereRerank
-from .store_index import QUESTION_NODE_ANSWER_KEY, QuestionVectorStoreIndex, \
-    QUESTION_NODE_LLM_REPLY
+from .index_objects import QuestionConfig, QuestionParser, QuestionCohereRerank, QUESTION_NODE_ANSWER_KEY, QUESTION_NODE_LLM_REPLY, QUESTION_NODE_RELATED_PROMPTS
+from .store_index import QuestionVectorStoreIndex
 from ...llama_objects.extra_utils import NodeTokenParser
 
 
@@ -134,7 +133,8 @@ class QuestionIndexAPI(CriadexIndexAPI):
             file_metadata={
                 **file.file_metadata,
                 QUESTION_NODE_ANSWER_KEY: config.answer,
-                QUESTION_NODE_LLM_REPLY: config.llm_reply
+                QUESTION_NODE_LLM_REPLY: config.llm_reply,
+                QUESTION_NODE_RELATED_PROMPTS: config.related_prompts
             }
         )
 
