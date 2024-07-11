@@ -158,9 +158,6 @@ class CohereRerankPostprocessor(AsyncBaseNodePostprocessor):
                 node=node.node,
                 score=rerank_score
             )
-
             new_nodes.append(new_node_with_score)
 
-        new_nodes = sorted(nodes, key=lambda n: n.score)
-        new_nodes.reverse()
-        return new_nodes
+        return sorted(new_nodes, key=lambda n: 1 / n.score)

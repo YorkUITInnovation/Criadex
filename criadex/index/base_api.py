@@ -16,13 +16,12 @@ You should have received a copy of the GNU General Public License along with Cri
 
 import asyncio
 import functools
-import typing
 from abc import abstractmethod
 from typing import Optional, List
 
 import cohere
 from llama_index.core.postprocessor.types import BaseNodePostprocessor
-from llama_index.core.schema import NodeWithScore, QueryBundle, TextNode
+from llama_index.core.schema import NodeWithScore, QueryBundle
 from llama_index.core.storage import StorageContext
 from pydantic import BaseModel, ValidationError
 from qdrant_client import QdrantClient
@@ -133,14 +132,17 @@ class CriadexIndexAPI:
         # Apply postprocessors (incl. re-ranking)
         nodes = await self.postprocess_nodes(query_bundle, nodes, self.node_postprocessors(config))
 
-        # Top N
-        nodes = nodes[:config.top_n]
+        # Is Rerank Enabled
+        if config.rerank_enabled:
 
-        # !!LAST!! remove fuzzy dupes
-        nodes = self._fuzzy.postprocess_nodes(nodes, query_bundle)
+            # Top N
+            nodes = nodes[:config.top_n]
 
-        # Min N
-        return [node for node in nodes if node.score >= config.min_n]
+            # Min N
+            nodes = [node for node in nodes if node.score >= config.min_n]
+
+        # Then remove fuzzy dupes
+        return self._fuzzy.postprocess_nodes(nodes, query_bundle)
 
     @classmethod
     async def postprocess_nodes(

@@ -15,12 +15,15 @@ You should have received a copy of the GNU General Public License along with Cri
 """
 
 import logging
+import traceback
 from typing import Optional, Any, Union, List
 
+from grpc import RpcError
 from llama_index.core.vector_stores import VectorStoreQuery
 from llama_index.vector_stores.qdrant import QdrantVectorStore
 from qdrant_client import grpc as qgrpc, QdrantClient
 from qdrant_client.http import models as qhttp
+from qdrant_client.http.exceptions import UnexpectedResponse
 
 from criadex.index.llama_objects.index_retriever import FilteredVectorStoreQuery
 
@@ -30,6 +33,14 @@ class CriadexQdrantVectorStore(QdrantVectorStore):
     Custom llama-index vector store for Qdrant that utilizes multitenancy with Criadex's "Group" System
 
     """
+
+    def _collection_exists(self, collection_name: str) -> bool:
+        """Check if a collection exists."""
+        try:
+            return self._client.collection_exists(collection_name)
+        except (RpcError, UnexpectedResponse, ValueError):
+            logging.error(traceback.format_exc())
+            return False
 
     def _build_query_filter(self, query: VectorStoreQuery) -> Optional[qhttp.Filter]:
         """
