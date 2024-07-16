@@ -149,11 +149,11 @@ class SearchConfig(BaseModel):
     prompt: str
 
     # Vector DB
-    top_k: int = Field(default=1, ge=1, le=50)
+    top_k: int = Field(default=1, ge=1, le=1000)
     min_k: float = Field(default=0.5, ge=0.0, le=1.0)
 
     # Reranking
-    top_n: int = Field(default=1, ge=1, le=50)
+    top_n: int = Field(default=1, ge=1, le=1000)
     min_n: float = Field(default=0.5, ge=0.0, le=1.0)
 
     rerank_enabled: bool = True

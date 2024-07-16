@@ -55,7 +55,7 @@ class CriadexIndexAPI:
     """
 
     TOP_N: int = None  # Let the CLIENT decide what is relevant. Pull & rank ALL
-    MAX_TOP_K: int = 50  # Limit the user to a max top K for resource usage purposes
+    MAX_TOP_K: int = 1000  # Limit the user to a max top K for resource usage purposes
 
     def __init__(
             self,
