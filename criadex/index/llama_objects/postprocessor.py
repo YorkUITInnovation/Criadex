@@ -87,6 +87,9 @@ class CohereRerankPostprocessor(AsyncBaseNodePostprocessor):
 
     """
 
+    VECTOR_SCORE_METADATA_KEY = "vector_score"
+    RERANK_SCORE_METADATA_KEY = "rerank_score"
+
     top_n: Optional[int] = None
     _reranker: CriaCohereRerank = PrivateAttr()
 
@@ -147,17 +150,20 @@ class CohereRerankPostprocessor(AsyncBaseNodePostprocessor):
         for result in results:
             # Fetch the node
             node: NodeWithScore = nodes[result.index]
-            rerank_score: int = result.relevance_score
+            rerank_score: float = result.relevance_score
 
-            # Update metadata
-            node.node.metadata['vector_score'] = nodes[result.index].score
-            node.node.metadata['rerank_score'] = rerank_score
+            # If we rerank a 2nd time we don't want to overwrite the original vector & fuck stuff up score!
+            if self.VECTOR_SCORE_METADATA_KEY not in node.node.metadata:
+                node.node.metadata[self.VECTOR_SCORE_METADATA_KEY] = node.score
+
+            node.node.metadata[self.RERANK_SCORE_METADATA_KEY] = result.relevance_score
 
             # Update the node
             new_node_with_score = NodeWithScore(
                 node=node.node,
                 score=rerank_score
             )
+
             new_nodes.append(new_node_with_score)
 
         return sorted(new_nodes, key=lambda n: 1 / n.score)
