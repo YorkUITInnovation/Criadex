@@ -153,7 +153,7 @@ class SearchConfig(BaseModel):
     min_k: float = Field(default=0.5, ge=0.0, le=1.0)
 
     # Reranking
-    top_n: int = Field(default=1, ge=1, le=1000)
+    top_n: int = Field(default=1, ge=1)
     min_n: float = Field(default=0.5, ge=0.0, le=1.0)
 
     rerank_enabled: bool = True
