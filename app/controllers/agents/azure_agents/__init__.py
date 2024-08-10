@@ -20,7 +20,7 @@ from app.controllers.security import get_api_key_model_query
 from app.core import config
 from app.core.route import CriaRouter
 from app.core.schemas import AppMode
-from . import chat, intents, language, transform
+from . import chat, intents, language, transform, related_prompts
 
 router = CriaRouter(
     tags=["Agents:Azure"],
@@ -31,7 +31,8 @@ router.include_views(
     chat.view,
     intents.view,
     language.view,
-    transform.view
+    transform.view,
+    related_prompts.view
 )
 
 __all__ = ["router"]

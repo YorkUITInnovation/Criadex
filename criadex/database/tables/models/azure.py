@@ -29,6 +29,7 @@ AZURE_MODELS: Type = Literal[
     "gpt-4",
     "gpt-4-32k",
     "gpt-4o",
+    "gpt-4o-mini",
     "text-embedding-ada-002",
     "text-embedding-ada-001",
     "text-embedding-3-large",

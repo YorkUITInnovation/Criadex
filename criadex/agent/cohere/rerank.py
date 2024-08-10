@@ -108,7 +108,7 @@ class RerankAgent(BaseAgent):
 
         return self._rerank_model
 
-    async def build_node_postprocessors(self) -> List[BaseNodePostprocessor]:
+    async def build_node_postprocessors(self, config: RerankAgentConfig) -> List[BaseNodePostprocessor]:
         """
         Build the node postprocessors for re-ranking
 
@@ -129,7 +129,7 @@ class RerankAgent(BaseAgent):
             raise ValueError("Must be a CriaCohereRerank model!")
 
         cohere_rerank: DocumentCohereRerank = DocumentCohereRerank(
-            top_n=2,
+            top_n=config.top_n or 10,
             reranker=service_config.rerank_model
         )
 
@@ -164,7 +164,7 @@ class RerankAgent(BaseAgent):
 
         """
 
-        await self.build_node_postprocessors()
+        await self.build_node_postprocessors(config)
 
         nodes = await CriadexIndexAPI.postprocess_nodes(
             query_bundle=QueryBundle(config.prompt),

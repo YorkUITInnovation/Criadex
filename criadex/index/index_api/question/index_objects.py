@@ -29,6 +29,7 @@ from ...llama_objects.schemas import CriadexFile
 class RelatedPrompt(BaseModel):
     label: str
     prompt: str
+    llm_generated: bool = False
 
 
 class QuestionConfig(BaseModel):

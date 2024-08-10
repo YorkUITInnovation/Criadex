@@ -27,6 +27,7 @@ from llama_index.core.schema import NodeWithScore, TextNode
 from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
 from llama_index.llms.azure_openai import AzureOpenAI
 from openai.types import CompletionUsage
+from openai.types.chat import ChatCompletion
 from pydantic import PrivateAttr
 from tiktoken import Encoding
 
@@ -111,6 +112,10 @@ class CriaAzureOpenAI(AzureOpenAI):
     Instance of the LlamaIndex LLM model
 
     """
+
+    def _prepare_chat_with_tools(self, tools: List["BaseTool"], user_msg: Optional[Union[str, ChatMessage]] = None, chat_history: Optional[List[ChatMessage]] = None, verbose: bool = False, allow_parallel_tool_calls: bool = False,
+                                 **kwargs: Any) -> Dict[str, Any]:
+        pass
 
     _token_usages: Dict[int, List[CompletionUsage]] = PrivateAttr(default_factory=dict)
 
@@ -354,8 +359,8 @@ class CriaAzureOpenAI(AzureOpenAI):
         content: str = (response.message.content if isinstance(response, ChatResponse) else response.text) or str()
 
         # If we receive completion back
-        if response.raw.get("usage"):
-            completion_usage: CompletionUsage = response.raw["usage"]
+        if response.raw.usage:
+            completion_usage: CompletionUsage = response.raw.usage
 
         # If we have to manually calculate it
         else:
