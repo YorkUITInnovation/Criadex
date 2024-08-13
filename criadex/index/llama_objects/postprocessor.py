@@ -17,7 +17,7 @@ You should have received a copy of the GNU General Public License along with Cri
 from abc import abstractmethod
 from typing import List, Optional
 
-from cohere.responses import Reranking
+from cohere import RerankResponse
 from llama_index.core import QueryBundle
 from llama_index.core.postprocessor.types import BaseNodePostprocessor
 from llama_index.core.schema import NodeWithScore
@@ -140,14 +140,14 @@ class CohereRerankPostprocessor(AsyncBaseNodePostprocessor):
         if len(nodes) == 0:
             return []
 
-        results: Reranking = await self._reranker.rerank(
+        response: RerankResponse = await self._reranker.rerank(
             query=query_bundle,
             nodes=nodes,
             top_n=self.top_n or len(nodes)
         )
 
         new_nodes = []
-        for result in results:
+        for result in response.results:
             # Fetch the node
             node: NodeWithScore = nodes[result.index]
             rerank_score: float = result.relevance_score

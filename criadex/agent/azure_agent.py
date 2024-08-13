@@ -29,7 +29,7 @@ from pydantic import BaseModel
 from criadex.agent.base_agent import BaseAgentResponse, BaseAgent
 from criadex.criadex import Criadex
 from criadex.index.base_api import CriadexIndexAPI
-from criadex.index.llama_objects.models import CriaAzureOpenAI, ContentFilterError
+from criadex.index.llama_objects.models import CriaAzureOpenAI, ContentFilterError, ExtendedCompletionUsage
 
 
 class LLMAgentModelConfig(BaseModel):
@@ -49,7 +49,7 @@ class LLMAgentResponse(BaseAgentResponse):
 
     """
 
-    usage: List[CompletionUsage]
+    usage: List[ExtendedCompletionUsage]
 
 
 class LLMAgent(BaseAgent):
@@ -142,11 +142,12 @@ class LLMAgent(BaseAgent):
                 raise ContentFilterError("Hit an OpenAI filter") from ex
             raise ex
 
-    def usage(self, prompt: Union[str, List[ChatMessage]]) -> List[CompletionUsage]:
+    def usage(self, prompt: Union[str, List[ChatMessage]], usage_label: str) -> List[ExtendedCompletionUsage]:
         """
         Calculate the usage of the LLM model
 
         :param prompt: The prompt to calculate the usage for
+        :param usage_label: Label describing how the LLM was used (i.e. the agent name)
         :return: The usage
 
         """
@@ -154,7 +155,11 @@ class LLMAgent(BaseAgent):
         if isinstance(prompt[0], ChatMessage):
             prompt: str = self._llm.get_prompt(prompt)
 
-        return self._llm.pop_hash(prompt)
+        usages: List[ExtendedCompletionUsage] = self._llm.pop_hash(prompt)
+        for usage in usages:
+            usage.usage_label = usage_label
+
+        return usages
 
     @abstractmethod
     async def execute(self, **kwargs: dict) -> LLMAgentResponse:

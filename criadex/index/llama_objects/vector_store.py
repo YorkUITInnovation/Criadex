@@ -25,7 +25,11 @@ from qdrant_client import grpc as qgrpc, QdrantClient
 from qdrant_client.http import models as qhttp
 from qdrant_client.http.exceptions import UnexpectedResponse
 
+from criadex.index.llama_objects.extra_utils import IgnoreSpecificMessageFilter
 from criadex.index.llama_objects.index_retriever import FilteredVectorStoreQuery
+
+logger = logging.getLogger("llama_index.vector_stores.qdrant.base")
+logger.addFilter(IgnoreSpecificMessageFilter())
 
 
 class CriadexQdrantVectorStore(QdrantVectorStore):

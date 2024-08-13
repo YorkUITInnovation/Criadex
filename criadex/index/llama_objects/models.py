@@ -19,19 +19,21 @@ from __future__ import annotations
 from typing import Any, Dict, List, Union, Optional
 
 import tiktoken
-from cohere import AsyncClient
-from cohere.responses import Reranking
+from cohere import AsyncClient, RerankResponse
 from llama_index.core import BasePromptTemplate, ChatPromptTemplate, QueryBundle
 from llama_index.core.base.llms.types import CompletionResponse, ChatResponse, ChatMessage
 from llama_index.core.schema import NodeWithScore, TextNode
 from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
 from llama_index.llms.azure_openai import AzureOpenAI
 from openai.types import CompletionUsage
-from openai.types.chat import ChatCompletion
 from pydantic import PrivateAttr
 from tiktoken import Encoding
 
 from criadex.index.llama_objects.schemas import Reranker
+
+
+class ExtendedCompletionUsage(CompletionUsage):
+    usage_label: Optional[str] = None
 
 
 class CriaEmbedding(AzureOpenAIEmbedding):
@@ -83,7 +85,7 @@ class CriaCohereRerank(Reranker):
             nodes: List[NodeWithScore],
             top_n: Optional[int] = None,
             **kwargs
-    ) -> Reranking:
+    ) -> RerankResponse:
         """
         Rerank the nodes using the Cohere model
 
@@ -117,7 +119,7 @@ class CriaAzureOpenAI(AzureOpenAI):
                                  **kwargs: Any) -> Dict[str, Any]:
         pass
 
-    _token_usages: Dict[int, List[CompletionUsage]] = PrivateAttr(default_factory=dict)
+    _token_usages: Dict[int, List[ExtendedCompletionUsage]] = PrivateAttr(default_factory=dict)
 
     def __init__(self, **kwargs: Any):
         """
@@ -282,7 +284,7 @@ class CriaAzureOpenAI(AzureOpenAI):
             encoding=encoding
         )
 
-    def pop_hash(self, prompt: str) -> List[CompletionUsage]:
+    def pop_hash(self, prompt: str) -> List[ExtendedCompletionUsage]:
         """
         Pop the token usage from the token usage list
 
@@ -360,7 +362,7 @@ class CriaAzureOpenAI(AzureOpenAI):
 
         # If we receive completion back
         if response.raw.usage:
-            completion_usage: CompletionUsage = response.raw.usage
+            completion_usage: ExtendedCompletionUsage = response.raw.usage
 
         # If we have to manually calculate it
         else:
@@ -379,7 +381,7 @@ class CriaAzureOpenAI(AzureOpenAI):
             completion_tokens: int = self.string_tokens(string=content, encoding=encoding)
 
             # Build usage
-            completion_usage: CompletionUsage = CompletionUsage(
+            completion_usage: ExtendedCompletionUsage = ExtendedCompletionUsage(
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 total_tokens=prompt_tokens + completion_tokens

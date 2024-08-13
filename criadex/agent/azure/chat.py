@@ -54,6 +54,6 @@ class ChatAgent(LLMAgent):
 
         return ChatAgentResponse(
             chat_response=response,
-            usage=self.usage(history),
+            usage=self.usage(history, usage_label="ChatAgent"),
             message="Successfully queried the model!"
         )

@@ -186,5 +186,5 @@ class IntentsAgent(LLMAgent):
         # Wrap it in a bow
         return IntentsAgentResponse(
             ranked_intents=self._parse_llm_response(response, intents),
-            usage=self.usage(query)
+            usage=self.usage(query, usage_label="IntentsAgent")
         )

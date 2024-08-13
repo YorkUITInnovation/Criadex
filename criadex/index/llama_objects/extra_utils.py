@@ -1,3 +1,4 @@
+import logging
 from typing import Sequence, Any
 
 from llama_index.core.base.embeddings.base import BaseEmbedding
@@ -78,3 +79,11 @@ class NodeTokenParser(NodeParser):
             nodes=nodes,
             model_name=self.embedding_model.model_name
         )
+
+
+class IgnoreSpecificMessageFilter(logging.Filter):
+    def filter(self, record):
+        ignore_messages = [
+            "Both client and aclient are provided. If using `:memory:` mode, the data between clients is not synced."
+        ]
+        return not any(msg in record.getMessage() for msg in ignore_messages)

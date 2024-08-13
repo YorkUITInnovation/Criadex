@@ -101,7 +101,7 @@ class TransformAgent(LLMAgent):
 
         return TransformAgentResponse(
             new_prompt=response.message.content,
-            usage=self.usage(history),
+            usage=self.usage(history, usage_label="TransformAgent"),
             message="Successfully queried the model!"
         )
 

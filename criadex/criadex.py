@@ -15,6 +15,7 @@ You should have received a copy of the GNU General Public License along with Cri
 """
 
 import asyncio
+import logging
 from asyncio import AbstractEventLoop, Task
 from typing import Optional, Dict, List, Type
 
@@ -35,6 +36,7 @@ from .database.api import GroupDatabaseAPI
 from .group import Group
 from .index.index_api.document.index import DocumentIndexAPI
 from .index.index_api.question.index import QuestionIndexAPI
+from .index.llama_objects.extra_utils import IgnoreSpecificMessageFilter
 from .index.llama_objects.models import CriaCohereRerank, CriaEmbedding, CriaAzureOpenAI
 from .index.llama_objects.schemas import CriadexFile
 from .schemas import GroupConfig, GroupExistsError, GroupNotFoundError, IndexType, \

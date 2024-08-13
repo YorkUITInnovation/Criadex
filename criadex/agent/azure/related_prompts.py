@@ -139,5 +139,5 @@ class RelatedPromptsGenerationAgent(LLMAgent):
         # Wrap it in a bow
         return RelatedPromptsGenerationAgentResponse(
             related_prompts=self._parse_llm_response(response),
-            usage=self.usage(history)
+            usage=self.usage(history, usage_label="RelatedPromptsAgent")
         )
