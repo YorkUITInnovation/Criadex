@@ -13,16 +13,26 @@ You should have received a copy of the GNU General Public License along with Cri
 @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
 
 """
+import warnings
 
+# Create the regex pattern with wildcards (.* allows any characters before and after)
 import uvicorn
+
+# Disable UserWarning: "Valid config keys have changed in V2" cuz llama-index is wack
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message="Valid config keys have changed in V2:\n" + r"\* 'allow_population_by_field_name'"
+)
 
 from app.core import config
 from app.core.schemas import AppMode
 
 if __name__ == "__main__":
+    # Import the app instance
 
     uvicorn.run(
-        app="app.core:app",
+        app="app.__app__:app",
         host=config.APP_HOST,
         port=config.APP_PORT,
         reload=config.APP_MODE == AppMode.TESTING,

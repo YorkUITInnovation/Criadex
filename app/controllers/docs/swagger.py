@@ -23,7 +23,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse
 
 from app.controllers.schemas import catch_exceptions, APIResponse
-from app.controllers.security import api_key_header, api_key_query
+from app.core.security import api_key_header, api_key_query
 from app.core import config
 from app.core.route import CriaRoute
 

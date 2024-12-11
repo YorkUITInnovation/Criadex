@@ -15,6 +15,7 @@ You should have received a copy of the GNU General Public License along with Cri
 """
 
 import os
+import warnings
 
 from aiomysql import Pool
 
@@ -61,4 +62,6 @@ class GroupDatabaseAPI(BaseDatabaseAPI):
 
         async with self._pool.acquire() as pool:
             async with pool.cursor() as cursor:
-                await cursor.execute(queries)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=Warning)
+                    await cursor.execute(queries)

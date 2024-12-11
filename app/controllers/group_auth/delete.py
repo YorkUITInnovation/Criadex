@@ -80,7 +80,7 @@ class DeleteGroupAuthRoute(CriaRoute):
         ):
             return self.ResponseModel(
                 status=404,
-                code="SUCCESS",
+                code="NOT_FOUND",
                 message="The key is not authorized on this index!"
             )
 

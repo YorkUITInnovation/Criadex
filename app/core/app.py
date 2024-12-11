@@ -31,12 +31,13 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app.controllers.__init__ import router
-from app.controllers.security import BadAPIKeyException, unauthorized_exception_handler
+from app.core.security import BadAPIKeyException, unauthorized_exception_handler
 from criadex.criadex import Criadex
 from . import config
 from .database.api import AuthDatabaseAPI
 from .middleware import StatusMiddleware
-from .schemas import index_search_limiter, model_query_limiter, RateLimitResponse
+from .schemas import index_search_limiter, model_query_limiter
+from ..controllers.schemas import RateLimitResponse
 
 
 class CriadexAPI(FastAPI):
@@ -63,7 +64,10 @@ class CriadexAPI(FastAPI):
         self.auth: Optional[AuthDatabaseAPI] = None
 
     @classmethod
-    async def create(cls) -> CriadexAPI:
+    def create(
+            cls,
+            criadex: Optional[Criadex] = None,
+    ) -> CriadexAPI:
         """
         Generate an instance of the app
 
@@ -73,7 +77,7 @@ class CriadexAPI(FastAPI):
 
         # Make more stuff
         _app: CriadexAPI = CriadexAPI(
-            criadex=Criadex(
+            criadex=criadex or Criadex(
                 mysql_credentials=config.MYSQL_CREDENTIALS,
                 qdrant_credentials=config.QDRANT_CREDENTIALS
             ),
@@ -189,15 +193,19 @@ class CriadexAPI(FastAPI):
             exit()
 
         # Initialization
-        await criadex_api.criadex.initialize()
-        criadex_api.auth = AuthDatabaseAPI(pool=criadex_api.criadex.mysql_api.pool)
-        await criadex_api.auth.initialize()
+        await criadex_api._initialize(criadex_api)
 
         # Shutdown is after yield
         yield
 
         criadex_api.logger.info("Shutting down Criadex...")
 
+    @classmethod
+    async def _initialize(
+            cls,
+            criadex_api: CriadexAPI
+    ):
+        await criadex_api.criadex.initialize()
+        criadex_api.auth = AuthDatabaseAPI(pool=criadex_api.criadex.mysql_api.pool)
+        await criadex_api.auth.initialize()
 
-# Instance of the app, started by Uvicorn.
-app: CriadexAPI = asyncio.get_event_loop().run_until_complete(CriadexAPI.create())

@@ -92,7 +92,7 @@ class CriadexFile(Document):
             metadata
         )
 
-        excluded_embed_keys: List[str] = excluded_llm_keys
+        excluded_embed_keys: List[str] = [*excluded_llm_keys, 'image_base64']
 
         return cls(
             text=text,

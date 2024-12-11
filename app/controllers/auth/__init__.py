@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License along with Cri
 
 from fastapi import Security
 
-from app.controllers.security import get_api_key_master
+from app.core.security import get_api_key_master
 from app.core import config
 from app.core.schemas import AppMode
 from . import check, create, delete, reset

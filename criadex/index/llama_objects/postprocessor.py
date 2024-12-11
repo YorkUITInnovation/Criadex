@@ -87,8 +87,8 @@ class CohereRerankPostprocessor(AsyncBaseNodePostprocessor):
 
     """
 
-    VECTOR_SCORE_METADATA_KEY = "vector_score"
-    RERANK_SCORE_METADATA_KEY = "rerank_score"
+    VECTOR_SCORE_METADATA_KEY: str = "vector_score"
+    RERANK_SCORE_METADATA_KEY: str = "rerank_score"
 
     top_n: Optional[int] = None
     _reranker: CriaCohereRerank = PrivateAttr()
@@ -106,8 +106,8 @@ class CohereRerankPostprocessor(AsyncBaseNodePostprocessor):
 
         """
 
+        super().__init__(top_n=top_n, _reranker=reranker)
         self._reranker = reranker
-        super().__init__(top_n=top_n)
 
     @classmethod
     def class_name(cls) -> str:

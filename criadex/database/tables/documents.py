@@ -28,7 +28,7 @@ class DocumentsModel(TableModel):
 
     id: int
     name: str
-    group_id: str
+    group_id: int
     created: datetime
 
 

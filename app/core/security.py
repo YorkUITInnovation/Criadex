@@ -1,3 +1,8 @@
+from fastapi.security import APIKeyQuery, APIKeyHeader
+
+api_key_header: APIKeyQuery = APIKeyQuery(name="x-api-key", auto_error=False)
+api_key_query: APIKeyHeader = APIKeyHeader(name="x-api-key", auto_error=False)
+
 """
 
 This file is part of Criadex.
@@ -17,7 +22,6 @@ You should have received a copy of the GNU General Public License along with Cri
 from typing import Union, List, Optional, Callable
 
 from fastapi import Security, HTTPException
-from fastapi.security import APIKeyHeader, APIKeyQuery
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -26,8 +30,7 @@ from app.core.database.tables.auth import AuthorizationsModel
 from app.core.middleware import StatusMiddleware
 from criadex.schemas import GroupNotFoundError
 
-api_key_header: APIKeyQuery = APIKeyQuery(name="x-api-key", auto_error=False)
-api_key_query: APIKeyHeader = APIKeyHeader(name="x-api-key", auto_error=False)
+
 APP_API_KEYS: List[str] = []
 handle_none_str: Callable = lambda key: None if key == "None" else key
 

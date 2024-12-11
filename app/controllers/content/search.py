@@ -22,7 +22,7 @@ from starlette.requests import Request
 
 from app.controllers.schemas import catch_exceptions, exception_response, APIResponse, SUCCESS, GROUP_NOT_FOUND, \
     INVALID_REQUEST, ERROR, UNAUTHORIZED
-from app.controllers.security import check_group_auth, api_key_query, api_key_header, \
+from app.core.security import check_group_auth, api_key_query, api_key_header, \
     handle_none_str, BadAPIKeyException
 from app.core.config import SEARCH_INDEX_LIMIT_DAY, SEARCH_INDEX_LIMIT_HOUR, SEARCH_INDEX_LIMIT_MINUTE
 from app.core.route import CriaRoute
@@ -35,14 +35,14 @@ from criadex.schemas import GroupNotFoundError
 view = APIRouter()
 
 
-class IndexSearchResponse(APIResponse):
+class ContentSearchResponse(APIResponse):
     code: Union[SUCCESS, GROUP_NOT_FOUND, INVALID_REQUEST, UNAUTHORIZED, ERROR]
     response: Optional[IndexResponse] = None
 
 
 @cbv(view)
 class SearchContentRoute(CriaRoute):
-    ResponseModel = IndexSearchResponse
+    ResponseModel = ContentSearchResponse
 
     @view.post(
         path="/groups/{group_name}/content/search",

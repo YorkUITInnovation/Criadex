@@ -130,5 +130,3 @@ class Authorizations(Table):
 
         result: AuthorizationsModel = await self.retrieve(key=key)
         return bool(result.master) if result is not None else False
-
-

@@ -78,7 +78,7 @@ class ListGroupAuthRoute(CriaRoute):
             return self.ResponseModel(
                 code="SUCCESS",
                 status=200,
-                indexes=[]
+                groups=[]
             )
 
         group_models: List[GroupsModel] = await request.app.criadex.mysql_api.groups.retrieve_many_by_ids(
@@ -88,7 +88,7 @@ class ListGroupAuthRoute(CriaRoute):
         return self.ResponseModel(
             code="SUCCESS",
             status=200,
-            indexes=group_models
+            groups=group_models
         )
 
 

@@ -93,8 +93,7 @@ class UpdateContentRoute(CriaRoute):
                         f"File type invalid. Does not match the required struct for this index type.\n"
                         + ex.issue.json()
                 )
-
-            )   
+            )
 
         return self.ResponseModel(
             code="SUCCESS",

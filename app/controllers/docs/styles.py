@@ -16,12 +16,11 @@ You should have received a copy of the GNU General Public License along with Cri
 
 from pathlib import Path
 
-from fastapi import APIRouter, Security
+from fastapi import APIRouter
 from fastapi_utils.cbv import cbv
 from starlette.responses import Response
 
 from app.controllers.schemas import catch_exceptions, APIResponse
-from app.controllers.security import get_api_key_master
 from app.core import config
 from app.core.route import CriaRoute
 from app.core.schemas import AppMode

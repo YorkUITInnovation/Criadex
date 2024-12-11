@@ -16,6 +16,7 @@ You should have received a copy of the GNU General Public License along with Cri
 
 import logging
 import os
+import warnings
 
 from aiomysql import Pool
 
@@ -59,8 +60,11 @@ class AuthDatabaseAPI(BaseDatabaseAPI):
         async with self._pool.acquire() as pool:
             async with pool.cursor() as cursor:
 
-                # Initialize DB
-                await cursor.execute(queries)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=Warning)
+
+                    # Initialize DB
+                    await cursor.execute(queries)
 
                 # Create first master key IF one is configured
                 if config.APP_INITIAL_MASTER_KEY:

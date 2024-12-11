@@ -14,18 +14,10 @@ You should have received a copy of the GNU General Public License along with Cri
 
 """
 
-import json
 import os
 from enum import Enum
-from json import JSONDecodeError
-from typing import Optional
 
-from fastapi import Form
 from slowapi import Limiter
-from starlette import status
-from starlette.exceptions import HTTPException
-
-from app.controllers.schemas import APIResponse, RATE_LIMIT
 
 """Create a rate limiter for the index group search function to prevent abuse"""
 index_search_limiter: Limiter = Limiter(key_func=lambda request: request.path_params.get('index_name'))
@@ -60,13 +52,10 @@ def check_env_path(env_path: str) -> str:
     if not os.path.isfile(env_path):
         raise EnvNotFoundException(
             f"Failed to locate dotenv file at '{env_path}'. "
-            f"Specify location with the ENV_PATH environment variable"
+            f"Specify location with the ENV_PATH environment variable. "
+            f"CWD: {os.getcwd()}"
         )
 
     return env_path
 
-
-class RateLimitResponse(APIResponse):
-    status: int = 429
-    code: RATE_LIMIT
 

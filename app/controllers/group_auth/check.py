@@ -36,7 +36,7 @@ class GroupAuthCheckResponse(APIResponse):
 
 
 @cbv(view)
-class CheckGoupAuthRoute(CriaRoute):
+class CheckGroupAuthRoute(CriaRoute):
     ResponseModel = GroupAuthCheckResponse
 
     @view.get(
@@ -85,7 +85,7 @@ class CheckGoupAuthRoute(CriaRoute):
             )
 
         # Now check if it's authorized
-        status: bool = await request.app.auth.database.group_authorizations.exists(
+        status: bool = await request.app.auth.group_authorizations.exists(
             group_id=group_id, authorization_id=auth_model.id
         )
 

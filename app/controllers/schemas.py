@@ -54,7 +54,7 @@ class APIResponse(BaseModel):
 
     class Config:
         @staticmethod
-        def schema_extra(schema: dict, _):
+        def json_schema_extra(schema: dict, _):
             """Via https://github.com/tiangolo/fastapi/issues/1378"""
             props = {}
             for k, v in schema.get('properties', {}).items():
@@ -143,3 +143,8 @@ MODEL_IN_USE: Type = Literal["MODEL_IN_USE"]
 INVALID_MODEL: Type = Literal["INVALID_MODEL"]
 INVALID_REQUEST: Type = Literal["INVALID_REQUEST"]
 OPENAI_FILTER: Type = Literal["OPENAI_FILTER"]
+
+
+class RateLimitResponse(APIResponse):
+    status: int = 429
+    code: RATE_LIMIT
