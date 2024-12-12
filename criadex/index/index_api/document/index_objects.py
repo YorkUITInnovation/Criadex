@@ -28,6 +28,8 @@ from llama_index.core.schema import BaseNode, TextNode, Document, NodeRelationsh
 from pydantic import BaseModel, Field
 
 from criadex.index.llama_objects.postprocessor import CohereRerankPostprocessor
+from criadex.index.llama_objects.schemas import CriadexFile
+from criadex.index.schemas import RawAsset
 
 
 class ElementType(enum.Enum):
@@ -86,6 +88,7 @@ class DocumentConfig(BaseModel):
 
     """
 
+    assets: List[RawAsset] = Field(default_factory=list)
     nodes: List[Element]
 
 
@@ -235,3 +238,16 @@ class DocumentParser(NodeParser):
         """
 
         raise NotImplementedError
+
+
+def parse_document_assets(file: CriadexFile) -> List[RawAsset]:
+    """
+    Parse assets from a file
+
+    :param file: The file to parse
+    :return: The parsed assets
+
+    """
+
+    config: DocumentConfig = DocumentConfig(**json.loads(file.text))
+    return config.assets

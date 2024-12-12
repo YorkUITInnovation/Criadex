@@ -138,7 +138,6 @@ class Group:
         :return: The token cost to insert the file
 
         """
-
         return await self._index.insert(file=file)
 
     async def remove(self, file_name: str) -> None:

@@ -12,7 +12,7 @@ from app.controllers.content.upload import ContentUploadResponse
 from criadex.index.base_api import ContentUploadConfig
 from criadex.index.index_api.document.index_objects import DocumentConfig
 from criadex.index.index_api.question.index_objects import QuestionConfig
-from criadex.index.schemas import SearchConfig, TextNodeWithScore, IndexResponse
+from criadex.index.schemas import SearchConfig, IndexResponse
 from utils.content_utils import sample_document, sample_document_updated, sample_question, sample_question_updated
 from utils.misc_utils import assert_exists_index
 from utils.test_client import CriaTestClient, sample_question_index, client, sample_non_master_key, sample_master_headers, assert_response_shape, sample_document_index
@@ -114,7 +114,7 @@ async def test_group_content_document_positive(
         assert len(index_response.nodes) < 1, "The search results returned more than one node! Top_K and/or Top_N was ignored."
         assert len(index_response.nodes) > 1, "The search results returned less than one node! Top_K and/or Top_N was ignored."
 
-    top_node: TextNodeWithScore = index_response.nodes[0]
+    top_node = index_response.nodes[0]
 
     # Confirm the updated node is returned in the search results
     # This:
@@ -239,7 +239,7 @@ async def test_group_content_question_positive(
         assert len(index_response.nodes) < 1, "The question search results returned more than one node! Top_K and/or Top_N was ignored."
         assert len(index_response.nodes) > 1, "The question search results returned less than one node! Top_K and/or Top_N was ignored."
 
-    top_node: TextNodeWithScore = index_response.nodes[0]
+    top_node = index_response.nodes[0]
 
     # Confirm the updated node is returned in the search results
     # This:

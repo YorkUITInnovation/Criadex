@@ -14,34 +14,23 @@ You should have received a copy of the GNU General Public License along with Cri
 
 """
 
-import os
-import sys
-from typing import List, Optional, Any
+from typing import List, Optional
 
 from llama_index.core.postprocessor import MetadataReplacementPostProcessor
 from llama_index.core.postprocessor.types import BaseNodePostprocessor
-from llama_index.core.schema import NodeWithScore, TextNode, QueryBundle
+from llama_index.core.schema import NodeWithScore, QueryBundle
 from pydantic import BaseModel, Field
 
 from criadex.criadex import Criadex
 from criadex.index.index_api.document.index import DocumentIndexAPI
 from criadex.index.index_api.document.index_objects import DocumentCohereRerank, MetadataKeys
-from ...index.index_api.question.index_objects import QUESTION_NODE_ANSWER_KEY
 from criadex.index.llama_objects.models import CriaCohereRerank
 from ..base_agent import BaseAgent, BaseAgentResponse
 from ...database.tables.models.cohere import CohereModelsModel
 from ...index.base_api import CriadexIndexAPI
-from ...index.schemas import MetaTextNode, TextNodeWithScore, ServiceConfig
+from ...index.index_api.question.index_objects import QUESTION_NODE_ANSWER_KEY
+from ...index.schemas import ServiceConfig
 from ...schemas import ModelNotFoundError
-
-
-class PartialTextNodeWithScore(NodeWithScore):
-    """
-    Partial text node with score (used to fix weird llama-index inheritance bug)
-
-    """
-
-    node: MetaTextNode
 
 
 class RerankAgentResponse(BaseAgentResponse):
@@ -50,7 +39,7 @@ class RerankAgentResponse(BaseAgentResponse):
 
     """
 
-    ranked_nodes: List[TextNodeWithScore]
+    ranked_nodes: List[NodeWithScore]
     search_units: int
 
 
@@ -61,7 +50,7 @@ class RerankAgentConfig(BaseModel):
     """
 
     prompt: str
-    nodes: List[PartialTextNodeWithScore]
+    nodes: List[NodeWithScore]
 
     # Rerank config
     top_n: Optional[int] = Field(default=None, ge=1)

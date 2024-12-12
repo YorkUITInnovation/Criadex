@@ -30,11 +30,12 @@ from criadex.database.tables.groups import GroupsModel
 from criadex.database.tables.models.azure import AzureModelsModel, AzureModelsBaseModel
 from criadex.database.tables.models.cohere import CohereModelsModel, CohereModelsBaseModel
 from criadex.index.base_api import CriadexIndexAPI
-from criadex.index.schemas import IndexTypeNotSupported, QdrantConfig, ServiceConfig
+from criadex.index.schemas import IndexTypeNotSupported, QdrantConfig, ServiceConfig, RawAsset
 from criadex.schemas import QdrantCredentials, MySQLCredentials
 from .database.api import GroupDatabaseAPI
 from .group import Group
 from .index.index_api.document.index import DocumentIndexAPI
+from .index.index_api.document.index_objects import parse_document_assets
 from .index.index_api.question.index import QuestionIndexAPI
 from .index.llama_objects.models import CriaCohereRerank, CriaEmbedding
 from .index.llama_objects.schemas import CriadexFile
@@ -203,6 +204,7 @@ class Criadex:
         await group.delete()
 
         # Delete MySQL documents
+        await self._mysql_api.assets.delete_all_group_assets(group_id=group_id)
         await self._mysql_api.documents.delete_all(group_id=group_id)
 
         # Delete group itself
@@ -469,7 +471,8 @@ class Criadex:
 
         """
 
-        group_id: int = await self.get_id(name=file.group_name)
+        group: GroupsModel = await self._mysql_api.groups.retrieve(name=file.group_name)
+        group_id: int = group.id
 
         if await self._mysql_api.documents.exists(group_id=group_id, document_name=file.doc_id):
             raise DocumentExistsError()
@@ -477,9 +480,21 @@ class Criadex:
         # Insert into vector DB
         index: Group = await self.get(name=file.group_name)
         tokens: int = await index.insert(file)
+        assets: List[RawAsset] = []
+
+        if IndexType(group.type) == IndexType.DOCUMENT:
+            assets = parse_document_assets(file)
 
         # Insert into DB
-        await self._mysql_api.documents.insert(document_name=file.doc_id, group_id=group_id)
+        document_id: int = await self._mysql_api.documents.insert(document_name=file.doc_id, group_id=group_id)
+
+        # Add the assets (if there are any)
+        for asset in assets:
+            await self._mysql_api.assets.insert(
+                group_id=group_id,
+                document_id=document_id,
+                asset=asset
+            )
 
         # Calculate token count
         return tokens
@@ -503,7 +518,11 @@ class Criadex:
         group: Group = await self.get(name=group_name)
         await group.remove(file_name=document_name)
 
+        # Document reference
+        document: DocumentsModel = await self._mysql_api.documents.retrieve(group_id=group_id, document_name=document_name)
+
         # Remove doc from MySQL DB
+        await self._mysql_api.assets.delete_all_document_assets(document_id=document.id)
         await self._mysql_api.documents.delete(group_id=group_id, document_name=document_name)
 
     async def update_file(self, file: CriadexFile) -> int:

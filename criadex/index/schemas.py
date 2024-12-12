@@ -16,6 +16,7 @@ You should have received a copy of the GNU General Public License along with Cri
 
 from __future__ import annotations
 
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Any, Optional
@@ -25,7 +26,7 @@ from llama_index.core.base.embeddings.base import BaseEmbedding
 from llama_index.core.indices.base import BaseIndex
 from llama_index.core.ingestion import run_transformations
 from llama_index.core.llms import LLM
-from llama_index.core.schema import TextNode, NodeWithScore, TransformComponent
+from llama_index.core.schema import NodeWithScore, TransformComponent
 from pydantic import BaseModel, Field, ValidationError
 from qdrant_client import QdrantClient, AsyncQdrantClient
 from qdrant_client.http.models import Filter
@@ -79,32 +80,13 @@ class CriadexBaseIndex(BaseIndex, ABC):
         return sum([node.metadata.get(TOKEN_COUNT_METADATA_KEY, 0) for node in nodes])
 
 
-class MetaTextNode(TextNode):
-    """
-    A text node with metadata
-
-    """
-
-    metadata: dict = {}
-
-
-class TextNodeWithScore(NodeWithScore):
-    """
-    A text node with a ranking score
-
-    """
-
-    node: MetaTextNode
-    score: float
-
-
 class IndexResponse(BaseModel):
     """
     Response from an index search
 
     """
 
-    nodes: List[TextNodeWithScore]
+    nodes: List[NodeWithScore]
     search_units: int = 1
 
 
@@ -172,3 +154,9 @@ class ServiceConfig:
     embed_model: Optional[BaseEmbedding] = None
     rerank_model: Optional[Reranker] = None
     transformers: List[TransformComponent] = field(default_factory=list)
+
+
+class RawAsset(BaseModel):
+    uuid: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    data_mimetype: str
+    data_base64: str

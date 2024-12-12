@@ -20,6 +20,7 @@ import warnings
 from aiomysql import Pool
 
 from criadex.database.schemas import BaseDatabaseAPI
+from criadex.database.tables.assets import Assets
 from criadex.database.tables.models.azure import AzureModels
 from criadex.database.tables.models.cohere import CohereModels
 from criadex.database.tables.documents import Documents
@@ -41,6 +42,7 @@ class GroupDatabaseAPI(BaseDatabaseAPI):
 
         super().__init__(pool)
 
+        self.assets: Assets = Assets(pool)
         self.documents: Documents = Documents(pool)
         self.groups: Groups = Groups(pool)
         self.azure_models: AzureModels = AzureModels(pool)

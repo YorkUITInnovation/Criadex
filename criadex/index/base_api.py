@@ -31,7 +31,7 @@ from criadex.database.tables.models.cohere import CohereModelsModel
 from criadex.index.llama_objects.index_retriever import QdrantVectorIndexRetriever
 from criadex.index.llama_objects.models import CriaEmbedding, CriaAzureOpenAI, CriaCohereRerank
 from criadex.index.schemas import IndexResponse, \
-    CriadexBaseIndex, SearchConfig, ServiceConfig, IndexFileDataInvalidError, TextNodeWithScore
+    CriadexBaseIndex, SearchConfig, ServiceConfig, IndexFileDataInvalidError
 from .index_api.document.index_objects import FuzzyMetadataDuplicateRemovalPostProcessor, MetadataKeys
 from .llama_objects.postprocessor import AsyncBaseNodePostprocessor
 from .llama_objects.schemas import CriadexFile
@@ -87,10 +87,9 @@ class CriadexIndexAPI:
         CriaAzureOpenAI.validate_prompt(prompt=config.prompt)
 
         search_response: List[NodeWithScore] = await self._search(config)
-        search_response_re_casted: List[TextNodeWithScore] = [TextNodeWithScore(**node.model_dump()) for node in search_response]
 
         return IndexResponse(
-            nodes=search_response_re_casted,
+            nodes=search_response,
             search_units=1 if config.rerank_enabled else 0
         )
 

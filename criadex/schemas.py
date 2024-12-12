@@ -13,7 +13,6 @@ You should have received a copy of the GNU General Public License along with Cri
 @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
 
 """
-
 from enum import Enum
 from typing import Optional, Type, Literal, cast
 
@@ -164,3 +163,5 @@ class DocumentNotFoundError(RuntimeError):
     Thrown if the document does not exist in the index group and is being accessed
 
     """
+
+

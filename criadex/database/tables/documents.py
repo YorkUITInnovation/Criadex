@@ -38,7 +38,7 @@ class Documents(Table):
 
     """
 
-    async def insert(self, group_id: int, document_name: str) -> None:
+    async def insert(self, group_id: int, document_name: str) -> int:
         """
         Insert a document reference into the database
 
@@ -53,6 +53,8 @@ class Documents(Table):
                 "INSERT INTO Documents (`group_id`, `name`) VALUES (%s, %s)",
                 (group_id, document_name)
             )
+
+            return cursor.lastrowid
 
     async def delete(self, group_id: int, document_name: str) -> None:
         """

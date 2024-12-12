@@ -30,7 +30,7 @@ class APIResponse(BaseModel):
     """
 
     status: int = 200
-    message: Optional[str] = None
+    message: Optional[str] = "Successfully completed the request!"
     timestamp: int = round(time.time())
     code: str = "SUCCESS"
     error: Optional[str] = Field(default=None, hidden=True)
