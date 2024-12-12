@@ -37,7 +37,6 @@ async def test_group_auth_positive(
     response_data: GroupAuthCreateResponse = assert_response_shape(response.json(), custom_shape=GroupAuthCreateResponse)
 
     # Run checks on the response
-    print(response_data)
     assert response_data.status == 200 and response_data.code == "SUCCESS", "Failed to authenticate the test key on the index"
 
     # (2) Test if the group is in the list of auth

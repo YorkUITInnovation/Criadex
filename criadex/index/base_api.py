@@ -91,8 +91,13 @@ class CriadexIndexAPI:
         CriaAzureOpenAI.validate_prompt(prompt=config.prompt)
         search_response: List[NodeWithScore] = await self._search(config)
         search_response_assets: List[AssetsModel] = []
+        search_response_serialized: List[dict] = []
 
         for node in search_response:
+            search_response_serialized.append(
+                node.model_dump()
+            )
+
             if 'asset_uuid' not in node.node.metadata:
                 continue
 
@@ -104,7 +109,7 @@ class CriadexIndexAPI:
             search_response_assets.append(asset)
 
         return IndexResponse(
-            nodes=search_response,
+            nodes=search_response_serialized,
             assets=search_response_assets,
             search_units=1 if config.rerank_enabled else 0
         )

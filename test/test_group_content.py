@@ -54,9 +54,7 @@ async def test_group_content_document_positive(
         json=json.loads(content_upload_config.model_dump_json())
     )
 
-    print(json.loads(content_upload_config.model_dump_json()))
     response_data: ContentUploadResponse = assert_response_shape(response.json(), custom_shape=ContentUploadResponse)
-
     assert response_data.status == 200 and response_data.code == "SUCCESS", "Failed to upload the sample document"
 
     # (2) Check if the document was uploaded successfully by querying the group content list

@@ -36,6 +36,7 @@ class ExtendedCompletionUsage(CompletionUsage):
     usage_label: Optional[str] = None
 
 
+
 class CriaEmbedding(AzureOpenAIEmbedding):
     """
     Instance of the LlamaIndex Embedding model
@@ -132,18 +133,6 @@ class CriaAzureOpenAI(AzureOpenAI):
         super().__init__(
             **kwargs
         )
-
-    @classmethod
-    def validate_env(cls, _: Dict[str, Any]) -> str:
-        """
-        Disable guard rails requiring globals to be set that don't need to be.
-
-        :param _: N/A
-        :return: N/A
-
-        """
-
-        return "Nice try, Logan. I know better."
 
     @classmethod
     def _escape_prompt_str(cls, prompt_str: str) -> str:

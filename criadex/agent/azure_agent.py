@@ -16,14 +16,12 @@ You should have received a copy of the GNU General Public License along with Cri
 
 import json
 import logging
-import traceback
 from abc import abstractmethod
 from typing import List, Optional, Union
 
 import openai
 from llama_index.core.base.llms.types import ChatMessage, ChatResponse
 from llama_index.core.prompts import ChatPromptTemplate
-from openai.types import CompletionUsage
 from pydantic import BaseModel
 
 from criadex.agent.base_agent import BaseAgentResponse, BaseAgent
@@ -39,8 +37,8 @@ class LLMAgentModelConfig(BaseModel):
     """
 
     max_reply_tokens: Optional[int] = None
-    temperature: Optional[int] = None
-    top_p: Optional[int] = None
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
 
 
 class LLMAgentResponse(BaseAgentResponse):
@@ -155,11 +153,14 @@ class LLMAgent(BaseAgent):
         if isinstance(prompt[0], ChatMessage):
             prompt: str = self._llm.get_prompt(prompt)
 
-        usages: List[ExtendedCompletionUsage] = self._llm.pop_hash(prompt)
-        for usage in usages:
-            usage.usage_label = usage_label
+        extended_usages = []
 
-        return usages
+        for usage in self._llm.pop_hash(prompt):
+            extended_usage = ExtendedCompletionUsage(**usage.model_dump())
+            extended_usage.usage_label = usage_label
+            extended_usages.append(extended_usage)
+
+        return extended_usages
 
     @abstractmethod
     async def execute(self, **kwargs: dict) -> LLMAgentResponse:

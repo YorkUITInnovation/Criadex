@@ -26,7 +26,7 @@ from llama_index.core.base.embeddings.base import BaseEmbedding
 from llama_index.core.indices.base import BaseIndex
 from llama_index.core.ingestion import run_transformations
 from llama_index.core.llms import LLM
-from llama_index.core.schema import NodeWithScore, TransformComponent
+from llama_index.core.schema import TransformComponent
 from pydantic import BaseModel, Field, ValidationError
 from qdrant_client import QdrantClient, AsyncQdrantClient
 from qdrant_client.http.models import Filter
@@ -87,7 +87,7 @@ class IndexResponse(BaseModel):
 
     """
 
-    nodes: List[NodeWithScore]
+    nodes: List[dict]
     assets: List[AssetsModel] = Field(default_factory=list)
     search_units: int = 1
 

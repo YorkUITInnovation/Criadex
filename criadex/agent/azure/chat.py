@@ -14,11 +14,16 @@ You should have received a copy of the GNU General Public License along with Cri
 
 """
 
-from typing import List
+from typing import List, Optional
 
 from llama_index.core.base.llms.types import ChatResponse, ChatMessage
+from openai.types.chat import ChatCompletion
 
 from ..azure_agent import LLMAgent, LLMAgentResponse
+
+
+class ExtendedChatResponse(ChatResponse):
+    raw: Optional[ChatCompletion] = None
 
 
 class ChatAgentResponse(LLMAgentResponse):
@@ -27,7 +32,7 @@ class ChatAgentResponse(LLMAgentResponse):
 
     """
 
-    chat_response: ChatResponse
+    chat_response: dict
 
 
 class ChatAgent(LLMAgent):
@@ -52,8 +57,17 @@ class ChatAgent(LLMAgent):
             history=history
         )
 
+        # Pydantic is dumb. "message" is casted as Any internally, so that causes an error
+        fixed_response = ExtendedChatResponse(
+            message=response.message,
+            raw=response.raw,
+            additional_kwargs=response.additional_kwargs,
+            logprobs=response.logprobs,
+            delta=response.delta
+        )
+
         return ChatAgentResponse(
-            chat_response=response,
+            chat_response=fixed_response.model_dump(),
             usage=self.usage(history, usage_label="ChatAgent"),
             message="Successfully queried the model!"
         )

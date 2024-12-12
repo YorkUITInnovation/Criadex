@@ -18,7 +18,7 @@ from typing import List, Optional
 
 from llama_index.core.postprocessor import MetadataReplacementPostProcessor
 from llama_index.core.postprocessor.types import BaseNodePostprocessor
-from llama_index.core.schema import NodeWithScore, QueryBundle
+from llama_index.core.schema import NodeWithScore, QueryBundle, TextNode
 from pydantic import BaseModel, Field
 
 from criadex.criadex import Criadex
@@ -33,13 +33,26 @@ from ...index.schemas import ServiceConfig
 from ...schemas import ModelNotFoundError
 
 
+class CriaTextNode(TextNode):
+    metadata: dict = Field(default_factory=dict)
+
+
+class TextNodeWithScore(NodeWithScore):
+    """
+    Text node with score
+
+    """
+
+    node: CriaTextNode
+
+
 class RerankAgentResponse(BaseAgentResponse):
     """
     Rerank agent response
 
     """
 
-    ranked_nodes: List[NodeWithScore]
+    ranked_nodes: List[TextNodeWithScore]
     search_units: int
 
 
@@ -50,7 +63,7 @@ class RerankAgentConfig(BaseModel):
     """
 
     prompt: str
-    nodes: List[NodeWithScore]
+    nodes: List[TextNodeWithScore]
 
     # Rerank config
     top_n: Optional[int] = Field(default=None, ge=1)
@@ -169,7 +182,7 @@ class RerankAgent(BaseAgent):
 
         # Return new nodes
         return RerankAgentResponse(
-            ranked_nodes=nodes,
+            ranked_nodes=[TextNodeWithScore(node=node.node, score=node.score) for node in nodes],
             search_units=1,
             message="Successfully re-ranked the nodes!"
         )

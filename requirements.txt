@@ -17,7 +17,7 @@ urlextract==1.8.0
 html5lib==1.1
 
 # Llama-Index Libraries
-llama-index-core==0.12.1
+llama-index-core==0.12.5
 llama-index-embeddings-azure-openai==0.3.0
 llama-index-llms-azure-openai==0.3.0
 llama-index-postprocessor-rankgpt-rerank==0.3.0
