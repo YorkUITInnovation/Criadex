@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field, ValidationError
 from qdrant_client import QdrantClient, AsyncQdrantClient
 from qdrant_client.http.models import Filter
 
+from criadex.database.tables.assets import AssetsModel
 from criadex.index.llama_objects.extra_utils import TOKEN_COUNT_METADATA_KEY
 from criadex.index.llama_objects.index_retriever import QdrantVectorIndexRetriever
 from criadex.index.llama_objects.schemas import Reranker, CriadexFile
@@ -87,6 +88,7 @@ class IndexResponse(BaseModel):
     """
 
     nodes: List[NodeWithScore]
+    assets: List[AssetsModel] = Field(default_factory=list)
     search_units: int = 1
 
 

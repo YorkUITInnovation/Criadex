@@ -57,12 +57,14 @@ class CriadexFile(Document):
     FILE_NAME_META_STR: ClassVar[str] = "file_name"
     FILE_CREATED_AT_META_STR: ClassVar[str] = "created_at"
     FILE_GROUP_META_STR: ClassVar[str] = "group_name"
+    FILE_GROUP_ID_META_STR: ClassVar[str] = "group_id"
 
     @classmethod
     def create(
             cls,
             file_name: str,
             file_group: str,
+            file_group_id: int,
             file_metadata: dict,
             text: Optional[str] = None,
     ) -> Optional[CriadexFile]:
@@ -71,6 +73,7 @@ class CriadexFile(Document):
 
         :param file_name: The name of the file
         :param file_group: The group name of the file
+        :param file_group_id: The group id of the file
         :param file_metadata: The metadata for the file
         :param text: The text of the file
         :return: The CriadexFile object
@@ -84,7 +87,8 @@ class CriadexFile(Document):
             **file_metadata,
             cls.FILE_GROUP_META_STR: file_group,
             cls.FILE_NAME_META_STR: file_name,
-            cls.FILE_CREATED_AT_META_STR: round(time.time())
+            cls.FILE_CREATED_AT_META_STR: round(time.time()),
+            cls.FILE_GROUP_ID_META_STR: file_group_id
         }
 
         # Default behaviour is to exclude all keys

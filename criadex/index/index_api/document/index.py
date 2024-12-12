@@ -121,11 +121,12 @@ class DocumentIndexAPI(CriadexIndexAPI):
 
         return postprocessors
 
-    async def _convert(self, group_name: str, file: ContentUploadConfig) -> CriadexFile:
+    async def _convert(self, group_name: str, group_id: int, file: ContentUploadConfig) -> CriadexFile:
         """
         Convert a generic file to a CriadexFile
 
         :param group_name: The group name
+        :param group_id: The group id
         :param file: The file to convert
         :return: Converted file
 
@@ -137,6 +138,7 @@ class DocumentIndexAPI(CriadexIndexAPI):
             file_name=file.file_name,
             text=config.json(),
             file_group=group_name,
+            file_group_id=group_id,
             file_metadata=file.file_metadata
         )
 

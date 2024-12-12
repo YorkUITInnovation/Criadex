@@ -35,6 +35,8 @@ from criadex.index.schemas import IndexResponse, \
 from .index_api.document.index_objects import FuzzyMetadataDuplicateRemovalPostProcessor, MetadataKeys
 from .llama_objects.postprocessor import AsyncBaseNodePostprocessor
 from .llama_objects.schemas import CriadexFile
+from ..database.api import GroupDatabaseAPI
+from ..database.tables.assets import AssetsModel
 
 
 class ContentUploadConfig(BaseModel):
@@ -61,12 +63,14 @@ class CriadexIndexAPI:
             self,
             service_config: ServiceConfig,
             storage_context: StorageContext,
-            qdrant_client: QdrantClient
+            qdrant_client: QdrantClient,
+            mysql_api: GroupDatabaseAPI
     ):
         self._service_config: ServiceConfig = service_config
         self._storage_context: StorageContext = storage_context
         self._qdrant_client: QdrantClient = qdrant_client
         self._index: Optional[CriadexBaseIndex] = None
+        self._mysql_api: GroupDatabaseAPI = mysql_api
         self._fuzzy: FuzzyMetadataDuplicateRemovalPostProcessor = FuzzyMetadataDuplicateRemovalPostProcessor(
             target_metadata_key=MetadataKeys.WINDOW
         )
@@ -85,26 +89,39 @@ class CriadexIndexAPI:
 
         # Validate the prompt first
         CriaAzureOpenAI.validate_prompt(prompt=config.prompt)
-
         search_response: List[NodeWithScore] = await self._search(config)
+        search_response_assets: List[AssetsModel] = []
+
+        for node in search_response:
+            if 'asset_uuid' not in node.node.metadata:
+                continue
+
+            asset: AssetsModel = await self._mysql_api.assets.retrieve(
+                group_id=node.node.metadata['group_id'],
+                asset_uuid=node.node.metadata['asset_uuid']
+            )
+
+            search_response_assets.append(asset)
 
         return IndexResponse(
             nodes=search_response,
+            assets=search_response_assets,
             search_units=1 if config.rerank_enabled else 0
         )
 
-    async def convert(self, group_name: str, file: ContentUploadConfig) -> CriadexFile:
+    async def convert(self, group_name: str, group_id: int, file: ContentUploadConfig) -> CriadexFile:
         """
         Convert an UNPROCESSED file to an IndexFile specific to this index
 
         :param group_name: The name of the group the file will belong to
+        :param group_id: The ID of the group the file will belong to
         :param file: The unprocessed file
         :return: The new, processed file
 
         """
 
         try:
-            return await self._convert(group_name, file)
+            return await self._convert(group_name, group_id, file)
         except ValidationError as ex:
             raise IndexFileDataInvalidError(ex, "Invalid index file structure")
 
@@ -204,7 +221,7 @@ class CriadexIndexAPI:
         return self._qdrant_client
 
     @abstractmethod
-    async def _convert(self, group_name: str, file: ContentUploadConfig) -> CriadexFile:
+    async def _convert(self, group_name: str, group_id: int, file: ContentUploadConfig) -> CriadexFile:
         """
         Convert an UNPROCESSED file to an IndexFile specific to this index
 

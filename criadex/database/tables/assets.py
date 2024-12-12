@@ -14,12 +14,14 @@ You should have received a copy of the GNU General Public License along with Cri
 
 """
 import base64
-import uuid
+import typing
 from datetime import datetime
 from typing import Optional, Tuple, List
 
 from criadex.database.schemas import Table, TableModel
-from criadex.index.schemas import RawAsset
+
+if typing.TYPE_CHECKING:
+    from criadex.index.schemas import RawAsset
 
 
 class AssetsModel(TableModel):
@@ -33,7 +35,7 @@ class AssetsModel(TableModel):
     document_id: int
     group_id: int
     mimetype: str
-    data: bytes
+    data: str
     created: datetime
 
     def to_base64(self) -> str:
@@ -52,7 +54,7 @@ class Assets(Table):
             self,
             group_id: int,
             document_id: int,
-            asset: RawAsset
+            asset: "RawAsset"
     ) -> str:
         """
         Insert an asset reference into the database
@@ -64,16 +66,13 @@ class Assets(Table):
 
         """
 
-        data_binary = base64.b64decode(asset.data_base64)
-        new_uuid = uuid.UUID(asset.uuid)
-
         async with self.cursor() as cursor:
             await cursor.execute(
-                "INSERT INTO Assets (`group_id`, `document_id`, `data`, `mimetype`, `uuid`) VALUES (%s, %s, %s, %s, %s)",
-                (group_id, document_id, data_binary, asset.data_mimetype, new_uuid.bytes)
+                "INSERT INTO Assets (`group_id`, `document_id`, `data`, `mimetype`, `uuid`) VALUES (%s, %s, FROM_BASE64(%s), %s, UUID_TO_BIN(%s))",
+                (group_id, document_id, asset.data_base64, asset.data_mimetype, asset.uuid)
             )
 
-        return str(new_uuid)
+        return asset.uuid
 
     async def delete(
             self,
@@ -88,24 +87,11 @@ class Assets(Table):
         :return: None
         """
 
-        return await self.delete_many(document_id, asset_uuid)
-
-    async def delete_many(self, document_id: int, *asset_uuids: str) -> None:
-        """
-        Delete a document reference from the database
-
-        :param document_id: the document's primary key
-        :param asset_uuids: The names of the documents to delete
-        :return: None
-        """
-
-        placeholders: str = ', '.join(['%s'] * len(asset_uuids))
-
         async with self.cursor() as cursor:
             await cursor.execute(
                 "DELETE FROM Assets "
-                f"WHERE `document_id`=%s AND `name` IN ({placeholders})",
-                (document_id, *[uuid.UUID(asset_uuid).bytes for asset_uuid in asset_uuids])
+                f"WHERE `document_id`=%s AND `uuid`=(UUID_TO_BIN(%s))",
+                (document_id, asset_uuid)
             )
 
     async def delete_all_document_assets(self, document_id: int) -> None:
@@ -140,25 +126,23 @@ class Assets(Table):
                 (group_id,)
             )
 
-    async def retrieve(self, document_id: int, asset_uuid: str) -> Optional[AssetsModel]:
+    async def retrieve(self, group_id: int, asset_uuid: str) -> Optional[AssetsModel]:
         """
         Retrieve a document reference from the databased
 
-        :param document_id: the document's primary key
+        :param group_id: the group the asset resides in
         :param asset_uuid: The name of the document
 
         :return: Full model of the document
 
         """
 
-        asset_uuid_bytes = uuid.UUID(asset_uuid).bytes
-
         async with self.cursor() as cursor:
             await cursor.execute(
-                f"SELECT {AssetsModel.to_query_str()} "
+                f"SELECT `id`, BIN_TO_UUID(`uuid`) AS `uuid`, `document_id`, `group_id`, `mimetype`, CAST(TO_BASE64(`data`) AS CHAR) AS `data`, `created` "
                 "FROM Assets "
-                "WHERE `document_id`=%s AND `uuid`=%s",
-                (document_id, asset_uuid_bytes)
+                "WHERE `group_id`=%s AND `uuid`=UUID_TO_BIN(%s)",
+                (group_id, asset_uuid)
             )
 
             return AssetsModel.from_results(
@@ -188,14 +172,14 @@ class Assets(Table):
             if result is not None
         ) if results is not None else list()
 
-    async def exists(self, document_id: int, asset_uuid: str) -> bool:
+    async def exists(self, group_id: int, asset_uuid: str) -> bool:
         """
         Check if a given reference to an index document exists
 
-        :param document_id: the document's primary key
+        :param group_id: the asset's group id
         :param asset_uuid: The name of the document
         :return: Whether the document reference exists
 
         """
 
-        return bool(await self.retrieve(document_id=document_id, asset_uuid=asset_uuid))
+        return bool(await self.retrieve(group_id=group_id, asset_uuid=asset_uuid))

@@ -113,11 +113,12 @@ class QuestionIndexAPI(CriadexIndexAPI):
 
         return []
 
-    async def _convert(self, group_name: str, file: ContentUploadConfig) -> CriadexFile:
+    async def _convert(self, group_name: str, group_id: int, file: ContentUploadConfig) -> CriadexFile:
         """
         Convert a generic file to a CriadexFile
 
         :param group_name: The group name
+        :param group_id: The group id
         :param file: The file to convert
         :return: Converted file
 
@@ -130,6 +131,7 @@ class QuestionIndexAPI(CriadexIndexAPI):
             file_name=file.file_name,
             text=config.json(),  # Pass the JSON, our NodeParser will take care of it
             file_group=group_name,
+            file_group_id=group_id,
             file_metadata={
                 **file.file_metadata,
                 QUESTION_NODE_ANSWER_KEY: config.answer,

@@ -102,7 +102,7 @@ class SearchContentRoute(CriaRoute):
         return self.ResponseModel(
             code="SUCCESS",
             status=200,
-            message="Successfully retrieved the index group info.",
+            message="Successfully retrieved searched the index for the requested content.",
             response=response
         )
 

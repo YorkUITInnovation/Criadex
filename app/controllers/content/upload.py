@@ -85,9 +85,11 @@ class UploadContentRoute(CriaRoute):
                 message=f"The requested index group '{group_name}' was not found"
             )
 
+        group_id: int = await request.app.criadex.get_id(group_name)
+
         # Convert the file
         try:
-            file: CriadexFile = await group.index.convert(file=file, group_name=group_name)
+            file: CriadexFile = await group.index.convert(file=file, group_name=group_name, group_id=group_id)
         except IndexFileDataInvalidError as ex:
             return self.ResponseModel(
                 code="INVALID_FILE_TYPE",

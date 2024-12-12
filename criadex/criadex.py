@@ -703,14 +703,16 @@ class Criadex:
             return DocumentIndexAPI(
                 service_config=service_config,
                 storage_context=DocumentIndexAPI.build_storage_context(qdrant_config),
-                qdrant_client=self._qdrant
+                qdrant_client=self._qdrant,
+                mysql_api=self._mysql_api
             )
 
         if index_type is QuestionIndexAPI:
             return QuestionIndexAPI(
                 service_config=service_config,
                 storage_context=QuestionIndexAPI.build_storage_context(qdrant_config),
-                qdrant_client=self._qdrant
+                qdrant_client=self._qdrant,
+                mysql_api=self._mysql_api
             )
 
         raise ValueError("Invalid index type!")

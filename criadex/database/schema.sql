@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS `Documents`
 CREATE TABLE IF NOT EXISTS `Assets`
 (
     `id`          INT AUTO_INCREMENT PRIMARY KEY,
-    `uuid`        BINARY(128)  NOT NULL,
+    `uuid`        BINARY(16)  NOT NULL,
     `document_id` INT          NOT NULL,
     `group_id`    INT          NOT NULL,
     `mimetype`    VARCHAR(128) NOT NULL,
