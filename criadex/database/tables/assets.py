@@ -36,12 +36,8 @@ class AssetsModel(TableModel):
     group_id: int
     mimetype: str
     data: str
+    description: str
     created: datetime
-
-    def to_base64(self) -> str:
-        data = self.data
-        data_b64 = base64.b64encode(data)
-        return data_b64.decode('utf-8')
 
 
 class Assets(Table):
@@ -68,8 +64,8 @@ class Assets(Table):
 
         async with self.cursor() as cursor:
             await cursor.execute(
-                "INSERT INTO Assets (`group_id`, `document_id`, `data`, `mimetype`, `uuid`) VALUES (%s, %s, FROM_BASE64(%s), %s, UUID_TO_BIN(%s))",
-                (group_id, document_id, asset.data_base64, asset.data_mimetype, asset.uuid)
+                "INSERT INTO Assets (`group_id`, `document_id`, `data`, `mimetype`, `uuid`, `description`) VALUES (%s, %s, FROM_BASE64(%s), %s, UUID_TO_BIN(%s), %s)",
+                (group_id, document_id, asset.data_base64, asset.data_mimetype, asset.uuid, (asset.description or '')[:2048])
             )
 
         return asset.uuid
@@ -139,7 +135,7 @@ class Assets(Table):
 
         async with self.cursor() as cursor:
             await cursor.execute(
-                f"SELECT `id`, BIN_TO_UUID(`uuid`) AS `uuid`, `document_id`, `group_id`, `mimetype`, CAST(TO_BASE64(`data`) AS CHAR) AS `data`, `created` "
+                f"SELECT `id`, BIN_TO_UUID(`uuid`) AS `uuid`, `document_id`, `group_id`, `mimetype`, CAST(TO_BASE64(`data`) AS CHAR) AS `data`, `created`, `description` "
                 "FROM Assets "
                 "WHERE `group_id`=%s AND `uuid`=UUID_TO_BIN(%s)",
                 (group_id, asset_uuid)
@@ -148,29 +144,6 @@ class Assets(Table):
             return AssetsModel.from_results(
                 await cursor.fetchone()
             )
-
-    async def list(self, document_id: int) -> List[AssetsModel]:
-        """
-        List the asset references belonging to a given document
-        :return: List of document assets
-
-        """
-
-        async with self.cursor() as cursor:
-            await cursor.execute(
-                f"SELECT {AssetsModel.to_query_str()} "
-                "FROM Assets "
-                "WHERE `document_id`=%s",
-                (document_id,)
-            )
-
-            results: Optional[Tuple[tuple]] = await cursor.fetchall()
-
-        return list(
-            AssetsModel.from_results(result)
-            for result in results
-            if result is not None
-        ) if results is not None else list()
 
     async def exists(self, group_id: int, asset_uuid: str) -> bool:
         """

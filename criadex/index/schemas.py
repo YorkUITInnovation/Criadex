@@ -339,6 +339,7 @@ class RawAsset(BaseModel):
     uuid: str  # Must not be generated. Must be passed from whatever the element_id was
     data_mimetype: str
     data_base64: str
+    description: str
 
 
 class EmptyDocumentConfig(RuntimeError):
