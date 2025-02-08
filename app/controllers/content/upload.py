@@ -18,22 +18,21 @@ from typing import Optional, Union
 
 from fastapi import APIRouter
 from fastapi_utils.cbv import cbv
+from pydantic import ValidationError
 from starlette.requests import Request
 
-from app.controllers.schemas import catch_exceptions, exception_response, APIResponse, SUCCESS, GROUP_NOT_FOUND, \
-    INVALID_FILE_TYPE, INVALID_FILE_DATA, DUPLICATE, ERROR
+from app.controllers.schemas import catch_exceptions, exception_response, APIResponse, SUCCESS, GROUP_NOT_FOUND, INVALID_FILE_DATA, DUPLICATE, ERROR
 from app.core.route import CriaRoute
 from criadex.group import Group
 from criadex.index.base_api import ContentUploadConfig
-from criadex.index.llama_objects.schemas import CriadexFile
-from criadex.index.schemas import IndexFileDataInvalidError
+from criadex.index.schemas import Bundle, BundleConfig
 from criadex.schemas import GroupNotFoundError, DocumentExistsError
 
 view = APIRouter()
 
 
 class ContentUploadResponse(APIResponse):
-    code: Union[SUCCESS, GROUP_NOT_FOUND, INVALID_FILE_TYPE, INVALID_FILE_DATA, DUPLICATE, ERROR]
+    code: Union[SUCCESS, GROUP_NOT_FOUND, INVALID_FILE_DATA, DUPLICATE, ERROR]
     token_usage: Optional[int] = None
 
 
@@ -51,15 +50,6 @@ class UploadContentRoute(CriaRoute):
         ResponseModel
     )
     @exception_response(
-        IndexFileDataInvalidError,
-        ResponseModel(
-            code="INVALID_FILE_DATA",
-            status=400,
-            message="File data is invalid. This index may require a specific structure."
-        )
-
-    )
-    @exception_response(
         DocumentExistsError,
         ResponseModel(
             code="DUPLICATE",
@@ -75,7 +65,7 @@ class UploadContentRoute(CriaRoute):
             file: ContentUploadConfig
     ) -> ResponseModel:
 
-        # Get the index group
+        # Get the group
         try:
             group: Group = await request.app.criadex.get(group_name)
         except GroupNotFoundError:
@@ -85,18 +75,19 @@ class UploadContentRoute(CriaRoute):
                 message=f"The requested index group '{group_name}' was not found"
             )
 
-        group_id: int = await request.app.criadex.get_id(group_name)
-
         # Convert the file
         try:
-            file: CriadexFile = await group.index.convert(file=file, group_name=group_name, group_id=group_id)
-        except IndexFileDataInvalidError as ex:
+            bundle: Bundle[BundleConfig] = await group.index.convert(
+                group_model=await request.app.criadex.get_model(group_name=group_name),
+                file=file
+            )
+        except ValidationError as ex:
             return self.ResponseModel(
-                code="INVALID_FILE_TYPE",
+                code="INVALID_FILE_DATA",
                 status=400,
                 message=(
-                        f"File type invalid. Does not match the required struct for this index type.\n"
-                        + ex.issue.json()
+                        f"File type invalid. Does not match the required struct for this index type:\n"
+                        + ex.json()
                 )
             )
 
@@ -105,7 +96,7 @@ class UploadContentRoute(CriaRoute):
             code="SUCCESS",
             status=200,
             message="Successfully uploaded & indexed the content.",
-            token_usage=await request.app.criadex.insert_file(file=file)
+            token_usage=await request.app.criadex.insert_file(group=group, bundle=bundle)
         )
 
 

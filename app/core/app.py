@@ -16,7 +16,6 @@ You should have received a copy of the GNU General Public License along with Cri
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import warnings

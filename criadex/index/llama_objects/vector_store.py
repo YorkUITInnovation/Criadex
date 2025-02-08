@@ -21,7 +21,7 @@ from typing import Optional, Any, Union, List
 from grpc import RpcError
 from llama_index.core.vector_stores import VectorStoreQuery
 from llama_index.vector_stores.qdrant import QdrantVectorStore
-from qdrant_client import grpc as qgrpc, QdrantClient
+from qdrant_client import grpc as qgrpc
 from qdrant_client.http import models as qhttp
 from qdrant_client.http.exceptions import UnexpectedResponse
 
@@ -38,10 +38,11 @@ class CriadexQdrantVectorStore(QdrantVectorStore):
 
     """
 
-    def _collection_exists(self, collection_name: str) -> bool:
+    async def _acollection_exists(self, collection_name: str) -> bool:
         """Check if a collection exists."""
+
         try:
-            return self._client.collection_exists(collection_name)
+            return await self._aclient.collection_exists(collection_name)
         except (RpcError, UnexpectedResponse, ValueError):
             logging.error(traceback.format_exc())
             return False
@@ -80,7 +81,7 @@ class CriadexQdrantVectorStore(QdrantVectorStore):
 
         return merge_filters(base_filter, query_filter)
 
-    def _create_collection(self, collection_name: str, vector_size: int, rest=None) -> None:
+    async def _acreate_collection(self, collection_name: str, vector_size: int, rest=None) -> None:
         """
         Create a collection with a vector size and rest of the parameters.
         Overrides default qdrant behaviour for custom Cria related groups.
@@ -92,9 +93,7 @@ class CriadexQdrantVectorStore(QdrantVectorStore):
 
         """
 
-        self._client: QdrantClient
-
-        self._client.grpc_collections.Create(
+        await self._aclient.grpc_collections.Create(
             qgrpc.CreateCollection(
                 collection_name=collection_name,
                 vectors_config=qgrpc.VectorsConfig(
@@ -116,7 +115,7 @@ class CriadexQdrantVectorStore(QdrantVectorStore):
 
         # NEED to add group_name as its own index for multinenancy
         # https://github.com/qdrant/qdrant/blob/master/docs/grpc/docs.md#qdrant-HnswConfigDiff
-        self._client.grpc_points.CreateFieldIndex(
+        await self._aclient.grpc_points.CreateFieldIndex(
             qgrpc.CreateFieldIndexCollection(
                 collection_name=collection_name,
                 field_name="group_name",

@@ -106,7 +106,7 @@ class TableModel(BaseModel):
 
     """
     @classmethod
-    def get_fields(cls) -> Tuple[str]:
+    def get_fields(cls) -> Tuple[str, ...]:
         """
         See the fields in the TableModel
 
@@ -114,7 +114,7 @@ class TableModel(BaseModel):
 
         """
 
-        return tuple(cls.__fields__.keys())
+        return tuple(cls.model_fields.keys())
 
     @classmethod
     def to_query_str(cls) -> str:

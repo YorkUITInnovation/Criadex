@@ -13,7 +13,6 @@ You should have received a copy of the GNU General Public License along with Cri
 @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
 
 """
-
 import os
 import time
 from typing import List
@@ -22,7 +21,7 @@ from qdrant_client import grpc
 from qdrant_client.http import models as http
 
 from criadex.index.base_api import CriadexIndexAPI
-from criadex.index.llama_objects.schemas import CriadexFile
+from criadex.index.llama_objects.schemas import FILE_NAME_META_STR, FILE_GROUP_META_STR
 from criadex.index.schemas import SearchConfig
 
 
@@ -64,7 +63,7 @@ class Group:
 
         return grpc.Condition(
             field=grpc.FieldCondition(
-                key=CriadexFile.FILE_GROUP_META_STR,
+                key=FILE_GROUP_META_STR,
                 match=grpc.Match(text=self._group_name)
             )
         )
@@ -79,7 +78,7 @@ class Group:
         """
 
         return http.FieldCondition(
-            key=CriadexFile.FILE_GROUP_META_STR,
+            key=FILE_GROUP_META_STR,
             match=http.MatchValue(value=group_name)
         )
 
@@ -130,16 +129,6 @@ class Group:
         # Search the index given the generated group-constrained config
         return await self._index.search(config)
 
-    async def insert(self, file: CriadexFile) -> int:
-        """
-        Insert a file into the index group
-
-        :param file: The file to insert
-        :return: The token cost to insert the file
-
-        """
-        return await self._index.insert(file=file)
-
     async def remove(self, file_name: str) -> None:
         """
         Remove a file from the index group
@@ -151,12 +140,12 @@ class Group:
 
         file_condition: grpc.Condition = grpc.Condition(
             field=grpc.FieldCondition(
-                key=CriadexFile.FILE_NAME_META_STR,
+                key=FILE_NAME_META_STR,
                 match=grpc.Match(keyword=file_name)
             )
         )
 
-        await self._index.qdrant_client.async_grpc_points.Delete(
+        await self._index.qdrant_client.grpc_points.Delete(
             grpc.DeletePoints(
                 wait=False,
                 collection_name=self._index.collection_name(),
@@ -176,7 +165,7 @@ class Group:
 
         """
 
-        await self._index.qdrant_client.async_grpc_points.Delete(
+        await self._index.qdrant_client.grpc_points.Delete(
             grpc.DeletePoints(
                 wait=False,
                 collection_name=self._index.collection_name(),
@@ -209,3 +198,14 @@ class Group:
         """
 
         return self._index
+
+    @property
+    def name(self) -> str:
+        """
+        Getter for the group name
+
+        :return: The group name
+
+        """
+
+        return self._group_name

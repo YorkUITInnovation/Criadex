@@ -69,7 +69,6 @@ class RelatedPromptsGenerationAgent(LLMAgent):
 
         :param llm_prompt: The prompt
         :param llm_reply: The reply
-        :param llm_context: The context
 
         """
 

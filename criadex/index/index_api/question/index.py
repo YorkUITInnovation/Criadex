@@ -17,19 +17,17 @@ You should have received a copy of the GNU General Public License along with Cri
 from typing import List
 
 from llama_index.core.postprocessor.types import BaseNodePostprocessor
-from llama_index.core.storage import StorageContext
 
+from criadex.database.tables.groups import GroupsModel
 from criadex.index.base_api import CriadexIndexAPI, ContentUploadConfig
-from criadex.index.llama_objects.models import CriaEmbedding, CriaAzureOpenAI, CriaCohereRerank
-from criadex.index.llama_objects.schemas import CriadexFile
-from criadex.index.llama_objects.vector_store import CriadexQdrantVectorStore
-from criadex.index.schemas import QdrantConfig, SearchConfig, ServiceConfig
+from criadex.index.llama_objects.models import CriaEmbedding, CriaCohereRerank
+from criadex.index.schemas import SearchConfig, ServiceConfig, Bundle
 from .index_objects import QuestionConfig, QuestionParser, QuestionCohereRerank, QUESTION_NODE_ANSWER_KEY, QUESTION_NODE_LLM_REPLY, QUESTION_NODE_RELATED_PROMPTS
 from .store_index import QuestionVectorStoreIndex
 from ...llama_objects.extra_utils import NodeTokenParser
 
 
-class QuestionIndexAPI(CriadexIndexAPI):
+class QuestionIndexAPI(CriadexIndexAPI[QuestionConfig]):
     """
     Question index. This index type allows for the storage and retrieval of specific Q&A pairs, rather than document nodes.
 
@@ -50,24 +48,6 @@ class QuestionIndexAPI(CriadexIndexAPI):
             collection_name=self.collection_name(),
             service_config=self._service_config,
             storage_context=self._storage_context
-        )
-
-    @classmethod
-    def build_storage_context(cls, store_config: QdrantConfig) -> StorageContext:
-        """
-        Build the storage context for this index
-
-        :param store_config: Storage context item for the index
-        :return: Storage context
-
-        """
-
-        return StorageContext.from_defaults(
-            vector_store=CriadexQdrantVectorStore(
-                client=store_config.qdrant_client,
-                aclient=store_config.qdrant_aclient,
-                collection_name=cls.collection_name()
-            )
         )
 
     @classmethod
@@ -113,12 +93,11 @@ class QuestionIndexAPI(CriadexIndexAPI):
 
         return []
 
-    async def _convert(self, group_name: str, group_id: int, file: ContentUploadConfig) -> CriadexFile:
+    async def convert(self, group_model: GroupsModel, file: ContentUploadConfig) -> Bundle[QuestionConfig]:
         """
-        Convert a generic file to a CriadexFile
+        Convert a generic file to a Bundle[QuestionConfig]
 
-        :param group_name: The group name
-        :param group_id: The group id
+        :param group_model: The group to convert the file to
         :param file: The file to convert
         :return: Converted file
 
@@ -126,13 +105,11 @@ class QuestionIndexAPI(CriadexIndexAPI):
 
         config: QuestionConfig = QuestionConfig(**file.file_contents)
 
-        # Validate format
-        return CriadexFile.create(
-            file_name=file.file_name,
-            text=config.json(),  # Pass the JSON, our NodeParser will take care of it
-            file_group=group_name,
-            file_group_id=group_id,
-            file_metadata={
+        return Bundle[QuestionConfig](
+            name=file.file_name,
+            config=config,
+            group=group_model,
+            metadata={
                 **file.file_metadata,
                 QUESTION_NODE_ANSWER_KEY: config.answer,
                 QUESTION_NODE_LLM_REPLY: config.llm_reply,

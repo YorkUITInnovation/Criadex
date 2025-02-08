@@ -23,22 +23,21 @@ import aiomysql
 from aiomysql import Pool
 from grpc import StatusCode
 from grpc.aio import AioRpcError
-from qdrant_client import QdrantClient, grpc, AsyncQdrantClient
+from llama_index.core.schema import Document
+from qdrant_client import grpc, AsyncQdrantClient
 
 from criadex.database.tables.documents import DocumentsModel
 from criadex.database.tables.groups import GroupsModel
 from criadex.database.tables.models.azure import AzureModelsModel, AzureModelsBaseModel
 from criadex.database.tables.models.cohere import CohereModelsModel, CohereModelsBaseModel
 from criadex.index.base_api import CriadexIndexAPI
-from criadex.index.schemas import IndexTypeNotSupported, QdrantConfig, ServiceConfig, RawAsset
+from criadex.index.schemas import IndexTypeNotSupported, ServiceConfig, RawAsset, Bundle
 from criadex.schemas import QdrantCredentials, MySQLCredentials
 from .database.api import GroupDatabaseAPI
 from .group import Group
 from .index.index_api.document.index import DocumentIndexAPI
-from .index.index_api.document.index_objects import parse_document_assets
 from .index.index_api.question.index import QuestionIndexAPI
 from .index.llama_objects.models import CriaCohereRerank, CriaEmbedding
-from .index.llama_objects.schemas import CriadexFile
 from .schemas import GroupConfig, GroupExistsError, GroupNotFoundError, IndexType, \
     DocumentExistsError, DocumentNotFoundError, ModelExistsError, ModelNotFoundError, \
     ModelInUseError
@@ -71,8 +70,7 @@ class Criadex:
         self._mysql_credentials: MySQLCredentials = mysql_credentials
 
         # Databases
-        self._qdrant: Optional[QdrantClient] = None
-        self._aqdrant: Optional[AsyncQdrantClient] = None
+        self._qdrant: Optional[AsyncQdrantClient] = None
         self._mysql_pool: Optional[Pool] = None
         self._mysql_api: Optional[GroupDatabaseAPI] = None
 
@@ -93,19 +91,11 @@ class Criadex:
         self._loop = asyncio.get_running_loop()
 
         # Sync Vector DB Client
-        self._qdrant: QdrantClient = QdrantClient(
+        self._qdrant: AsyncQdrantClient = AsyncQdrantClient(
             host=self._qdrant_credentials.host,
             port=self._qdrant_credentials.port,
             grpc_port=self._qdrant_credentials.grpc_port,
             prefer_grpc=True,
-        )
-
-        # Async Vector DB Client
-        self._aqdrant: AsyncQdrantClient = AsyncQdrantClient(
-            host=self._qdrant_credentials.host,
-            port=self._qdrant_credentials.port,
-            grpc_port=self._qdrant_credentials.grpc_port,
-            prefer_grpc=True
         )
 
         # SQL DB Startup
@@ -462,36 +452,49 @@ class Criadex:
         # If this config already exists in a model we want to keep that integrity
         await self._mysql_api.cohere_models.update(config)
 
-    async def insert_file(self, file: CriadexFile) -> int:
+    async def get_model(
+            self,
+            group_name: str
+    ) -> GroupsModel:
         """
-        Insert a file into the Vector DB and MySQL registry
+        Get the model associated with an index group
 
-        :param file: The file inserted into the index group
+        :param group_name: The name of the index group
+        :return: The model
+
+        """
+
+        return await self._mysql_api.groups.retrieve(name=group_name)
+
+    async def insert_file(self, group: Group, bundle: Bundle) -> int:
+        """
+        Insert a file bundle into the Vector DB and MySQL registry
+
+        :param bundle: The bundle to insert
+        :param group: The group to insert into
         :return: Token count of the file
 
         """
 
-        group: GroupsModel = await self._mysql_api.groups.retrieve(name=file.group_name)
-        group_id: int = group.id
+        assert group.name == bundle.group.name, "Group & bundle group mismatch"
 
-        if await self._mysql_api.documents.exists(group_id=group_id, document_name=file.doc_id):
+        # Check if the document already exists
+        if await self._mysql_api.documents.exists(group_id=bundle.group.id, document_name=bundle.name):
             raise DocumentExistsError()
 
-        # Insert into vector DB
-        index: Group = await self.get(name=file.group_name)
-        tokens: int = await index.insert(file)
-        assets: List[RawAsset] = []
+        assets: List[RawAsset] = bundle.pop_assets()
+        document: Document = bundle.to_document()
 
-        if IndexType(group.type) == IndexType.DOCUMENT:
-            assets = parse_document_assets(file)
+        # Insert nodes into Qdrant
+        tokens: int = await group.index.insert(document=document)
 
-        # Insert into DB
-        document_id: int = await self._mysql_api.documents.insert(document_name=file.doc_id, group_id=group_id)
+        # Insert Document into MySQL
+        document_id: int = await self._mysql_api.documents.insert(document_name=document.doc_id, group_id=bundle.group.id)
 
         # Add the assets (if there are any)
         for asset in assets:
             await self._mysql_api.assets.insert(
-                group_id=group_id,
+                group_id=bundle.group.id,
                 document_id=document_id,
                 asset=asset
             )
@@ -525,21 +528,22 @@ class Criadex:
         await self._mysql_api.assets.delete_all_document_assets(document_id=document.id)
         await self._mysql_api.documents.delete(group_id=group_id, document_name=document_name)
 
-    async def update_file(self, file: CriadexFile) -> int:
+    async def update_file(self, group: Group, bundle: Bundle) -> int:
         """
         Update the contents of a given file by effectively deleting and re-adding it.
         Will throw DocumentNotFoundError when trying to delete the file if it DNE.
 
-        :param file: The new file
+        :param group: The group to update the file in
+        :param bundle: The bundle to update
         :return: Number of tokens to index
 
         """
 
         # Delete it
-        await self.delete_file(group_name=file.group_name, document_name=file.doc_id)
+        await self.delete_file(group_name=group.name, document_name=bundle.name)
 
         # Add it again
-        return await self.insert_file(file=file)
+        return await self.insert_file(group=group, bundle=bundle)
 
     async def exists_file(self, group_name: str, document_name: str) -> bool:
         """
@@ -604,7 +608,7 @@ class Criadex:
     async def _collection_exists(self, collection_name: str) -> bool:
 
         try:
-            response: grpc.GetCollectionInfoResponse = await self._qdrant.async_grpc_collections.Get(
+            response: grpc.GetCollectionInfoResponse = await self._qdrant.grpc_collections.Get(
                 grpc.GetCollectionInfoRequest(collection_name=collection_name)
             )
         except AioRpcError as ex:
@@ -647,6 +651,23 @@ class Criadex:
             if throw_error:
                 raise ex
 
+    @classmethod
+    def _to_index_type(cls, index_type: IndexType) -> Optional[CriadexIndexAPI]:
+        """
+        Map a given MySQL type ID to its respective class
+
+        :param index_type: The index type
+        :return: The associated index
+
+        """
+
+        return (
+            {
+                index_type.DOCUMENT.value: DocumentIndexAPI,
+                index_type.QUESTION.value: QuestionIndexAPI,
+            }
+        ).get(index_type.value, None)
+
     async def _build_index(self, group_name: str) -> CriadexIndexAPI:
         """
         Build a stored index from the MySQL DB
@@ -670,7 +691,7 @@ class Criadex:
             model_id=index_model.rerank_model_id
         )
 
-        index_type: Optional[Type[CriadexIndexAPI]] = IndexType.to_index(type_id=index_model.type)
+        index_type: Optional[Type[CriadexIndexAPI]] = self._to_index_type(IndexType(index_model.type))
 
         # Confirm retrieved
         if not all((embedding_model,)):
@@ -693,16 +714,10 @@ class Criadex:
             rerank_model=reranking,
         )
 
-        qdrant_config: QdrantConfig = QdrantConfig(
-            index_name=group_name,
-            qdrant_client=self._qdrant,
-            qdrant_aclient=self._aqdrant
-        )
-
         if index_type is DocumentIndexAPI:
             return DocumentIndexAPI(
                 service_config=service_config,
-                storage_context=DocumentIndexAPI.build_storage_context(qdrant_config),
+                storage_context=DocumentIndexAPI.build_storage_context(self._qdrant),
                 qdrant_client=self._qdrant,
                 mysql_api=self._mysql_api
             )
@@ -710,7 +725,7 @@ class Criadex:
         if index_type is QuestionIndexAPI:
             return QuestionIndexAPI(
                 service_config=service_config,
-                storage_context=QuestionIndexAPI.build_storage_context(qdrant_config),
+                storage_context=QuestionIndexAPI.build_storage_context(self._qdrant),
                 qdrant_client=self._qdrant,
                 mysql_api=self._mysql_api
             )

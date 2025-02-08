@@ -25,7 +25,6 @@ from app.controllers.schemas import catch_exceptions, exception_response, APIRes
 from app.core.config import QUERY_MODEL_RATE_LIMIT_HOUR, QUERY_MODEL_RATE_LIMIT_DAY, QUERY_MODEL_RATE_LIMIT_MINUTE
 from app.core.route import CriaRoute
 from app.core.schemas import model_query_limiter
-from criadex.agent.azure.chat import ChatAgent
 from criadex.agent.azure.transform import TransformAgentResponse, TransformAgentConfig, TransformAgent
 from criadex.agent.azure_agent import LLMAgentModelConfig
 from criadex.index.llama_objects.models import EmptyPromptError, ContentFilterError

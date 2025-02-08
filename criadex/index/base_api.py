@@ -14,29 +14,28 @@ You should have received a copy of the GNU General Public License along with Cri
 
 """
 
-import asyncio
-import functools
 from abc import abstractmethod
-from typing import Optional, List
+from typing import Optional, List, Sequence, Generic
 
 import cohere
 from llama_index.core.postprocessor.types import BaseNodePostprocessor
-from llama_index.core.schema import NodeWithScore, QueryBundle
+from llama_index.core.schema import NodeWithScore, QueryBundle, Document, BaseNode
 from llama_index.core.storage import StorageContext
-from pydantic import BaseModel, ValidationError
-from qdrant_client import QdrantClient
+from pydantic import BaseModel
+from qdrant_client import AsyncQdrantClient
 
 from criadex.database.tables.models.azure import AzureModelsModel
 from criadex.database.tables.models.cohere import CohereModelsModel
 from criadex.index.llama_objects.index_retriever import QdrantVectorIndexRetriever
 from criadex.index.llama_objects.models import CriaEmbedding, CriaAzureOpenAI, CriaCohereRerank
 from criadex.index.schemas import IndexResponse, \
-    CriadexBaseIndex, SearchConfig, ServiceConfig, IndexFileDataInvalidError
+    CriadexBaseIndex, SearchConfig, ServiceConfig, Bundle, BundleConfig
 from .index_api.document.index_objects import FuzzyMetadataDuplicateRemovalPostProcessor, MetadataKeys
 from .llama_objects.postprocessor import AsyncBaseNodePostprocessor
-from .llama_objects.schemas import CriadexFile
+from .llama_objects.vector_store import CriadexQdrantVectorStore
 from ..database.api import GroupDatabaseAPI
 from ..database.tables.assets import AssetsModel
+from ..database.tables.groups import GroupsModel
 
 
 class ContentUploadConfig(BaseModel):
@@ -50,7 +49,7 @@ class ContentUploadConfig(BaseModel):
     file_metadata: dict
 
 
-class CriadexIndexAPI:
+class CriadexIndexAPI(Generic[BundleConfig]):
     """
     API Wrapper for interacting with LlamaIndex-wrapped vector collections
 
@@ -63,12 +62,12 @@ class CriadexIndexAPI:
             self,
             service_config: ServiceConfig,
             storage_context: StorageContext,
-            qdrant_client: QdrantClient,
+            qdrant_client: AsyncQdrantClient,
             mysql_api: GroupDatabaseAPI
     ):
         self._service_config: ServiceConfig = service_config
         self._storage_context: StorageContext = storage_context
-        self._qdrant_client: QdrantClient = qdrant_client
+        self._qdrant_client: AsyncQdrantClient = qdrant_client
         self._index: Optional[CriadexBaseIndex] = None
         self._mysql_api: GroupDatabaseAPI = mysql_api
         self._fuzzy: FuzzyMetadataDuplicateRemovalPostProcessor = FuzzyMetadataDuplicateRemovalPostProcessor(
@@ -106,29 +105,14 @@ class CriadexIndexAPI:
                 asset_uuid=node.node.metadata['asset_uuid']
             )
 
-            search_response_assets.append(asset)
+            if asset is not None:
+                search_response_assets.append(asset)
 
         return IndexResponse(
             nodes=search_response_serialized,
             assets=search_response_assets,
             search_units=1 if config.rerank_enabled else 0
         )
-
-    async def convert(self, group_name: str, group_id: int, file: ContentUploadConfig) -> CriadexFile:
-        """
-        Convert an UNPROCESSED file to an IndexFile specific to this index
-
-        :param group_name: The name of the group the file will belong to
-        :param group_id: The ID of the group the file will belong to
-        :param file: The unprocessed file
-        :return: The new, processed file
-
-        """
-
-        try:
-            return await self._convert(group_name, group_id, file)
-        except ValidationError as ex:
-            raise IndexFileDataInvalidError(ex, "Invalid index file structure")
 
     async def _search(self, config: SearchConfig) -> List[NodeWithScore]:
         """
@@ -200,22 +184,25 @@ class CriadexIndexAPI:
 
         return nodes
 
-    async def insert(self, file: CriadexFile) -> int:
+    async def insert(
+            self,
+            document: Document
+    ) -> int:
         """
         Insert a file into the index group
 
-        :param file: The file to insert
+        :param document: The document nodes to insert
+        :param document: The document to insert
         :return: The token cost to insert the file
 
         """
 
-        # Returns the token count through complicated nested code :/
-        return await asyncio.to_thread(
-            functools.partial(self._index.insert, file)
+        return await self._index.insert_document(
+            document=document
         )
 
     @property
-    def qdrant_client(self) -> QdrantClient:
+    def qdrant_client(self) -> AsyncQdrantClient:
         """
         Getter for the Qdrant client
 
@@ -226,11 +213,11 @@ class CriadexIndexAPI:
         return self._qdrant_client
 
     @abstractmethod
-    async def _convert(self, group_name: str, group_id: int, file: ContentUploadConfig) -> CriadexFile:
+    async def convert(self, group_model: GroupsModel, file: ContentUploadConfig) -> Bundle[BundleConfig]:
         """
-        Convert an UNPROCESSED file to an IndexFile specific to this index
+        Convert an UNPROCESSED file into a compatible bundle
 
-        :param group_name: The name of the group the file will belong to
+        :param group_model: The group the file will belong to
         :param file: The unprocessed file
         :return: The new, processed file
 
@@ -281,7 +268,6 @@ class CriadexIndexAPI:
         """
         Build the service configuration for the index
 
-        :param llm: The LLM model
         :param embed_model: The embedding model
         :param rerank_model: The re-rank model
         :return: The service configuration
@@ -291,17 +277,21 @@ class CriadexIndexAPI:
         raise NotImplementedError
 
     @classmethod
-    @abstractmethod
-    def build_storage_context(cls, store_config: BaseModel) -> StorageContext:
+    def build_storage_context(cls, client: AsyncQdrantClient) -> StorageContext:
         """
-        Build the storage context for the index
+        Build the storage context for this index
 
-        :param store_config: The storage configuration
-        :return: The storage context
+        :param client: Async Qdrant client
+        :return: The storage context using qdrant
 
         """
 
-        raise NotImplementedError
+        return StorageContext.from_defaults(
+            vector_store=CriadexQdrantVectorStore(
+                aclient=client,
+                collection_name=cls.collection_name()
+            )
+        )
 
     @abstractmethod
     def node_postprocessors(self, config: SearchConfig) -> List[BaseNodePostprocessor]:

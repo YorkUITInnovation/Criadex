@@ -67,6 +67,7 @@ class DeleteContentRoute(CriaRoute):
             group_name: str,
             document_name: str
     ) -> ResponseModel:
+
         # Try to delete it
         await request.app.criadex.delete_file(
             group_name=group_name,

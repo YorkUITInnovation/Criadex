@@ -23,7 +23,7 @@ from llama_index.core.schema import BaseNode, NodeWithScore, QueryBundle, Docume
 from pydantic import BaseModel, Field
 
 from ...llama_objects.postprocessor import CohereRerankPostprocessor
-from ...llama_objects.schemas import CriadexFile
+from ...llama_objects.schemas import FILE_NAME_META_STR
 
 
 class RelatedPrompt(BaseModel):
@@ -144,7 +144,7 @@ class QuestionCohereRerank(CohereRerankPostprocessor):
         # First de-dupe results
         for node in nodes:
             try:
-                file_name: str = node.metadata[CriadexFile.FILE_NAME_META_STR]
+                file_name: str = node.metadata[FILE_NAME_META_STR]
             except KeyError as ex:
                 raise KeyError("File name not found in node metadata! Womp womp.") from ex
 

@@ -33,7 +33,7 @@ class APIResponse(BaseModel):
     message: Optional[str] = "Successfully completed the request!"
     timestamp: int = round(time.time())
     code: str = "SUCCESS"
-    error: Optional[str] = Field(default=None, hidden=True)
+    error: Optional[str] = Field(default=None, exclude=True)
 
     def dict(self, *args, **kwargs):
 
@@ -58,7 +58,7 @@ class APIResponse(BaseModel):
             """Via https://github.com/tiangolo/fastapi/issues/1378"""
             props = {}
             for k, v in schema.get('properties', {}).items():
-                if not v.get("hidden", False):
+                if not v.get("hidden", v.get("exclude", None)):
                     props[k] = v
             schema["properties"] = props
 
@@ -134,7 +134,6 @@ SUCCESS: Type = Literal["SUCCESS"]
 NOT_FOUND: Type = Literal["NOT_FOUND"]
 RATE_LIMIT: Type = Literal["RATE_LIMIT"]
 DUPLICATE: Type = Literal["DUPLICATE"]
-INVALID_FILE_TYPE: Type = Literal["INVALID_FILE_TYPE"]
 INVALID_INDEX_TYPE: Type = Literal["INVALID_INDEX_TYPE"]
 GROUP_NOT_FOUND: Type = Literal["GROUP_NOT_FOUND"]
 FILE_NOT_FOUND: Type = Literal["FILE_NOT_FOUND"]

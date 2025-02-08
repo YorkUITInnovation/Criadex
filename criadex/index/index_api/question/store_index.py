@@ -13,32 +13,43 @@ You should have received a copy of the GNU General Public License along with Cri
 @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
 
 """
+import datetime
 
-from criadex.index.index_api.document.store_index import DocumentVectorStoreIndex
+from criadex.database.tables.groups import GroupsModel
 from criadex.index.index_api.question.index_objects import QuestionConfig, QUESTION_NODE_ANSWER_KEY, QUESTION_NODE_LLM_REPLY
-from criadex.index.llama_objects.schemas import CriadexFile
+from criadex.index.schemas import Bundle, CriadexBaseIndex
+from criadex.schemas import IndexType
 
 
-class QuestionVectorStoreIndex(DocumentVectorStoreIndex):
+class QuestionVectorStoreIndex(CriadexBaseIndex):
     """
     Index vector store for questions
 
     """
 
     @classmethod
-    def seed_document(cls) -> CriadexFile:
+    def seed_bundle(cls) -> Bundle:
         """
         Create a seed document for a new index
         :return: The seed document
 
         """
 
-        return CriadexFile.create(
-            file_name="seed-file",
-            text=QuestionConfig(questions=["seed-question"], answer="seed-answer").json(),
-            file_group="seed-group",
-            file_metadata={
+        return Bundle(
+            name="seed-file",
+            config=QuestionConfig(questions=["seed-question"], answer="seed-answer"),
+            group=GroupsModel(
+                id=-1,
+                name="seed-group",
+                type=IndexType.QUESTION.value,
+                llm_model_id=-1,
+                embedding_model_id=-1,
+                rerank_model_id=-1,
+                created=datetime.datetime.now(datetime.timezone.utc)
+            ),
+            metadata={
                 QUESTION_NODE_ANSWER_KEY: "",
                 QUESTION_NODE_LLM_REPLY: False
-            }
+            },
+
         )

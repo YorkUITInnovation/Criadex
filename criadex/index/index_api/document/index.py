@@ -18,20 +18,18 @@ from typing import List
 
 from llama_index.core.postprocessor import MetadataReplacementPostProcessor
 from llama_index.core.postprocessor.types import BaseNodePostprocessor
-from llama_index.core.storage import StorageContext
 
+from criadex.database.tables.groups import GroupsModel
 from criadex.index.base_api import CriadexIndexAPI, ContentUploadConfig
 from criadex.index.index_api.document.index_objects import DocumentCohereRerank, DocumentConfig, MetadataKeys, \
     DocumentParser
 from criadex.index.index_api.document.store_index import DocumentVectorStoreIndex
 from criadex.index.llama_objects.extra_utils import NodeTokenParser
 from criadex.index.llama_objects.models import CriaEmbedding, CriaCohereRerank
-from criadex.index.llama_objects.schemas import CriadexFile
-from criadex.index.llama_objects.vector_store import CriadexQdrantVectorStore
-from criadex.index.schemas import QdrantConfig, SearchConfig, ServiceConfig
+from criadex.index.schemas import SearchConfig, ServiceConfig, Bundle
 
 
-class DocumentIndexAPI(CriadexIndexAPI):
+class DocumentIndexAPI(CriadexIndexAPI[DocumentConfig]):
     """
     Document index. This index type allows for the storage and retrieval of document nodes.
 
@@ -52,24 +50,6 @@ class DocumentIndexAPI(CriadexIndexAPI):
             collection_name=self.collection_name(),
             service_config=self._service_config,
             storage_context=self._storage_context
-        )
-
-    @classmethod
-    def build_storage_context(cls, store_config: QdrantConfig) -> StorageContext:
-        """
-        Build the storage context for this index
-
-        :param store_config: Qdrant config for storage
-        :return: The storage context using qdrant
-
-        """
-
-        return StorageContext.from_defaults(
-            vector_store=CriadexQdrantVectorStore(
-                client=store_config.qdrant_client,
-                aclient=store_config.qdrant_aclient,
-                collection_name=cls.collection_name()
-            )
         )
 
     @classmethod
@@ -121,25 +101,21 @@ class DocumentIndexAPI(CriadexIndexAPI):
 
         return postprocessors
 
-    async def _convert(self, group_name: str, group_id: int, file: ContentUploadConfig) -> CriadexFile:
+    async def convert(self, group_model: GroupsModel, file: ContentUploadConfig) -> Bundle[DocumentConfig]:
         """
-        Convert a generic file to a CriadexFile
+        Convert a generic file to a Bundle[DocumentConfig]
 
-        :param group_name: The group name
-        :param group_id: The group id
+        :param group_model: The group to convert the file to
         :param file: The file to convert
         :return: Converted file
 
         """
 
-        config: DocumentConfig = DocumentConfig(**file.file_contents)
-
-        return CriadexFile.create(
-            file_name=file.file_name,
-            text=config.json(),
-            file_group=group_name,
-            file_group_id=group_id,
-            file_metadata=file.file_metadata
+        return Bundle[DocumentConfig](
+            name=file.file_name,
+            config=DocumentConfig(**file.file_contents),
+            group=group_model,
+            metadata=file.file_metadata
         )
 
     @classmethod

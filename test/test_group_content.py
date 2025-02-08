@@ -43,7 +43,7 @@ async def test_group_content_document_positive(
     # A test upload config for the test document index
     content_upload_config: ContentUploadConfig = ContentUploadConfig(
         file_name=sample_doc_name,
-        file_contents=sample_doc.dict(),
+        file_contents=sample_doc.model_dump(),
         file_metadata={"pytest-sample-file-metadata": "pytest-sample-file-metadata-value"}
     )
 
@@ -74,7 +74,7 @@ async def test_group_content_document_positive(
     updated_node = updated_doc.nodes[-1]
     update_id: str = updated_node.metadata['update_id']
 
-    content_upload_config.file_contents = updated_doc.dict()
+    content_upload_config.file_contents = updated_doc.model_dump()
     response: Response = client.patch(
         f"/groups/{sample_document_index}/content/update",
         headers=sample_master_headers,

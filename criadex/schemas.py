@@ -18,10 +18,6 @@ from typing import Optional, Type, Literal, cast
 
 from pydantic import BaseModel
 
-from criadex.index.base_api import CriadexIndexAPI
-from .index.index_api.document.index import DocumentIndexAPI
-from .index.index_api.question.index import QuestionIndexAPI
-
 IndexTypeKeys: Type = Literal["DOCUMENT", "QUESTION"]
 
 
@@ -33,23 +29,6 @@ class IndexType(int, Enum):
 
     DOCUMENT = 1
     QUESTION = 2
-
-    @classmethod
-    def to_index(cls, type_id: int) -> Optional[CriadexIndexAPI]:
-        """
-        Map a given MySQL type ID to its respective class
-
-        :param type_id: The ID of the type (its number)
-        :return: The associated index
-
-        """
-
-        return (
-            {
-                cls.DOCUMENT.value: DocumentIndexAPI,
-                cls.QUESTION.value: QuestionIndexAPI,
-            }
-        ).get(type_id, None)
 
     @property
     def value(self) -> int:
@@ -163,5 +142,3 @@ class DocumentNotFoundError(RuntimeError):
     Thrown if the document does not exist in the index group and is being accessed
 
     """
-
-
