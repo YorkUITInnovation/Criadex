@@ -7,7 +7,7 @@ from app.controllers.auth.check import AuthCheckResponse
 from app.controllers.auth.create import AuthCreateResponse
 from app.controllers.auth.delete import AuthDeleteResponse
 from app.controllers.auth.reset import AuthResetResponse
-from utils.test_client import client, CriaTestClient, assert_response_shape, sample_master_headers
+from .utils.test_client import CriaTestClient, assert_response_shape
 
 
 @pytest.mark.asyncio

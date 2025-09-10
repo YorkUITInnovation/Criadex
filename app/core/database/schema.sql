@@ -1,4 +1,4 @@
-USE criadex;
+
 
 CREATE TABLE IF NOT EXISTS `Authorizations` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,

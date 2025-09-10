@@ -1,0 +1,222 @@
+import asyncio
+import os
+import pytest
+import pytest_asyncio
+from typing import AsyncGenerator
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+# we need to import CriaTestClient from the other file
+from .utils.test_client import CriaTestClient
+
+@pytest.fixture(scope="session")
+def event_loop():
+    """Create an instance of the default event loop for each test case."""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+
+@asynccontextmanager
+async def load_client() -> AsyncGenerator[CriaTestClient, None]:
+    """
+    Load the API as a TestClient instance for use in pytest
+
+    :return: TestClient instance
+
+    """
+
+    # Swap to directory with __main__.py
+    app_dir: Path = Path(__file__).parent.parent.joinpath("./app").resolve().absolute()
+    os.chdir(str(app_dir))
+
+    # Env as base project path
+    os.environ['ENV_PATH'] = os.environ.get('ENV_PATH', str(app_dir.parent))
+
+    from app.core.app import CriadexAPI
+    app = CriadexAPI.create()
+
+    # Yield the client
+    with CriaTestClient(app) as client:
+        try:
+            # Ensure required test groups exist after app startup via API calls (avoid cross-loop DB calls)
+            document_group: str = os.environ.get('TEST_DOCUMENT_GROUP', 'test-document-index')
+            question_group: str = os.environ.get('TEST_QUESTION_INDEX', 'test-question-index')
+            # Use model IDs that exist from schema.sql defaults
+            llm_id: int = int(os.environ.get('TEST_LLM_ID', '1'))
+            embed_id: int = int(os.environ.get('TEST_EMBEDDING_ID', '2'))
+            rerank_id: int = int(os.environ.get('TEST_RERANKER_ID', '1'))
+            non_master_key: str = os.environ.get('TEST_NON_MASTER_KEY', 'password-nomaster')
+
+            headers = {'X-Api-Key': os.environ.get('TEST_MASTER_KEY', 'password')}
+
+            def ensure_group(name: str, type_key: str) -> None:
+                payload = {
+                    "type": type_key,
+                    "llm_model_id": llm_id,
+                    "embedding_model_id": embed_id,
+                    "rerank_model_id": rerank_id,
+                }
+                # Try create; if exists, ignore
+                resp = client.post(f"/groups/{name}/create", headers=headers, json=payload)
+                # 200 or 409 are acceptable for idempotent setup
+                status = resp.json().get("status") if resp is not None else None
+                if status not in (200, 409):
+                    raise AssertionError(f"Failed to ensure group '{name}' exists for tests")
+
+            ensure_group(document_group, "DOCUMENT")
+            ensure_group(question_group, "QUESTION")
+
+            # Ensure non-master key exists for group_auth tests
+            key_payload = {"master": False}
+            resp = client.post(f"/auth/{non_master_key}/create", headers={'X-Api-Key': os.environ.get('TEST_MASTER_KEY', 'password')}, json=key_payload)
+            # 200 or 409 are fine (created or duplicate)
+            _status = resp.json().get("status") if resp is not None else None
+            assert _status in (200, 409), "Failed to create or identify test non-master API key"
+            yield client
+        finally:
+            await app.criadex.shutdown()
+
+
+@pytest_asyncio.fixture(scope="session")
+async def setup_database(event_loop):
+    """
+    Set up the database for the test session.
+    """
+    from app.core import config
+    import aiomysql
+
+    if os.environ.get('APP_API_MODE', 'TESTING') == 'TESTING':
+        host = '127.0.0.1'
+        db_name = 'criadex_test'
+    else:
+        host = os.environ.get('MYSQL_HOST') or config.MYSQL_CREDENTIALS.host
+        db_name = os.environ.get('MYSQL_DATABASE', 'criadex')
+
+
+    # Clean the database
+    async with aiomysql.connect(
+        host=host,
+        port=config.MYSQL_CREDENTIALS.port,
+        user=config.MYSQL_CREDENTIALS.username,
+        password=config.MYSQL_CREDENTIALS.password,
+    ) as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute(f"DROP DATABASE IF EXISTS {db_name}")
+            await cursor.execute(f"CREATE DATABASE {db_name}")
+
+
+@pytest_asyncio.fixture(scope="session")
+async def client(setup_database) -> AsyncGenerator[CriaTestClient, None]:
+    """
+    Get the test client
+
+    :return: Test client
+    """
+
+    async with load_client() as test_client:
+        yield test_client
+
+
+def _get_master_credentials() -> str:
+    """
+    Get the test API key
+
+    :return: Test API key
+
+    """
+
+    return os.environ.get('TEST_MASTER_KEY', 'password')
+
+
+def _get_non_master_credentials() -> str:
+    """
+    Get the test NON-master API key
+
+    :return: The non-master key
+
+    """
+
+    return os.environ.get('TEST_NON_MASTER_KEY', 'password-nomaster')
+
+
+@pytest.fixture
+def sample_master_key() -> str:
+    """
+    Get the test API key
+
+    :return: Test API key
+
+    """
+
+    return _get_master_credentials()
+
+
+@pytest.fixture
+def sample_non_master_key() -> str:
+    """
+    Get the test non-master API key
+
+    :return: The test non-master API key
+
+    """
+
+    return _get_non_master_credentials()
+
+
+@pytest.fixture
+def sample_document_index() -> str:
+    """
+    Get the document test group
+
+    :return: Document test group
+
+    """
+
+    return os.environ.get('TEST_DOCUMENT_GROUP', 'test-document-index')
+
+
+@pytest.fixture
+def sample_question_index() -> str:
+    """
+    Get the test question index
+
+    :return: Test question index
+
+    """
+
+    return os.environ.get('TEST_QUESTION_INDEX', 'test-question-index')
+
+
+@pytest.fixture
+def sample_llm_id() -> int:
+    """Sample LLM Id"""
+
+    return int(os.environ.get('TEST_LLM_ID', '1'))
+
+
+@pytest.fixture
+def sample_embedding_id() -> int:
+    """Sample LLM Id"""
+
+    return int(os.environ.get('TEST_EMBEDDING_ID', '2'))
+
+
+@pytest.fixture
+def sample_reranker_id() -> int:
+    """Sample LLM Id"""
+
+    return int(os.environ.get('TEST_RERANKER_ID', '3'))
+
+
+@pytest.fixture
+def sample_master_headers() -> dict:
+    """
+    Get the headers for a master key
+
+    :return: The headers
+
+    """
+
+    return {
+        'X-Api-Key': _get_master_credentials()
+    }

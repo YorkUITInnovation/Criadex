@@ -12,9 +12,9 @@ from app.controllers.models.cohere_models.create import CohereModelCreateRespons
 from app.controllers.models.cohere_models.delete import CohereModelDeleteResponse
 from app.controllers.models.cohere_models.update import CohereModelUpdateResponse
 from criadex.database.tables.models.azure import AzureModelsModel, AzureModelsPartialBaseModel
-from criadex.database.tables.models.cohere import CohereModelsModel, CohereModelsPartialBaseModel
-from utils.models_utils import create_test_azure_model, update_test_azure_model, create_test_cohere_model, update_test_cohere_model
-from utils.test_client import CriaTestClient, assert_response_shape, client, sample_master_headers
+from criadex.database.tables.models.cohere import CohereModelsModel, CohereModelsPartialBaseModel, CohereModelsBaseModel
+from .utils.models_utils import create_test_azure_model, update_test_azure_model, create_test_cohere_model, update_test_cohere_model
+from .utils.test_client import CriaTestClient, assert_response_shape
 
 
 @pytest.mark.asyncio
@@ -83,7 +83,7 @@ async def test_models_cohere_positive(
         client: CriaTestClient,
         sample_master_headers: dict,
 ) -> None:
-    test_model: CohereModelsModel = create_test_cohere_model()
+    test_model: CohereModelsBaseModel = create_test_cohere_model()
 
     # (1) Create a test model
     response: Response = client.post(

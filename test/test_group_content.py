@@ -13,9 +13,9 @@ from criadex.index.base_api import ContentUploadConfig
 from criadex.index.index_api.document.index_objects import DocumentConfig
 from criadex.index.index_api.question.index_objects import QuestionConfig
 from criadex.index.schemas import SearchConfig, IndexResponse
-from utils.content_utils import sample_document, sample_document_updated, sample_question, sample_question_updated
-from utils.misc_utils import assert_exists_index
-from utils.test_client import CriaTestClient, sample_question_index, client, sample_non_master_key, sample_master_headers, assert_response_shape, sample_document_index
+from .utils.content_utils import sample_document, sample_document_updated, sample_question, sample_question_updated
+from .utils.misc_utils import assert_exists_index
+from .utils.test_client import CriaTestClient, assert_response_shape
 
 
 @pytest.mark.asyncio

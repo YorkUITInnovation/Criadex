@@ -73,11 +73,15 @@ class UpdateAzureModelRoute(CriaRoute):
         # Get model
         model: AzureModelsModel = await request.app.criadex.about_azure_model(model_id=model_id)
 
-        # Update fields
-        model.api_key = model_config.api_key,
-        model.api_deployment = model_config.api_deployment
-        model.api_version = model_config.api_version
-        model.api_resource = model_config.api_resource
+        # Update only provided fields to avoid overwriting with None
+        if model_config.api_key is not None:
+            model.api_key = model_config.api_key
+        if model_config.api_deployment is not None:
+            model.api_deployment = model_config.api_deployment
+        if model_config.api_version is not None:
+            model.api_version = model_config.api_version
+        if model_config.api_resource is not None:
+            model.api_resource = model_config.api_resource
 
         # Update DB
         model: Optional[AzureModelsModel] = await request.app.criadex.update_azure_model(config=model)

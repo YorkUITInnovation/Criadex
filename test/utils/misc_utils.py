@@ -4,7 +4,7 @@ from httpx import Response
 from app.controllers.group_auth.delete import GroupAuthDeleteResponse
 from app.controllers.groups.about import GroupAboutResponse
 from app.controllers.schemas import NOT_FOUND, GROUP_NOT_FOUND, SUCCESS
-from utils.test_client import CriaTestClient, assert_response_shape
+from test.utils.test_client import CriaTestClient, assert_response_shape
 
 
 async def assert_exists_index(

@@ -35,7 +35,7 @@ from criadex.criadex import Criadex
 from . import config
 from .database.api import AuthDatabaseAPI
 from .middleware import StatusMiddleware
-from .schemas import index_search_limiter, model_query_limiter
+from .schemas import index_search_limiter, model_query_limiter, AppMode
 from ..controllers.schemas import RateLimitResponse
 
 
@@ -74,11 +74,21 @@ class CriadexAPI(FastAPI):
 
         """
 
+        if config.APP_MODE == AppMode.TESTING:
+            mysql_creds = config.MYSQL_CREDENTIALS.model_copy()
+            mysql_creds.host = '127.0.0.1'
+            mysql_creds.database = 'criadex_test'
+            qdrant_creds = config.QDRANT_CREDENTIALS.model_copy()
+            qdrant_creds.host = '127.0.0.1'
+        else:
+            mysql_creds = config.MYSQL_CREDENTIALS
+            qdrant_creds = config.QDRANT_CREDENTIALS
+
         # Make more stuff
         _app: CriadexAPI = CriadexAPI(
             criadex=criadex or Criadex(
-                mysql_credentials=config.MYSQL_CREDENTIALS,
-                qdrant_credentials=config.QDRANT_CREDENTIALS
+                mysql_credentials=mysql_creds,
+                qdrant_credentials=qdrant_creds
             ),
             docs_url=None,
             openapi_url=None,

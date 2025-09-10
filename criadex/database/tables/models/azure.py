@@ -102,7 +102,7 @@ class AzureModels(Table):
 
     """
 
-    async def update(self, config: AzureModelsModel):
+    async def update(self, config: AzureModelsModel) -> AzureModelsModel:
         """
         Update an azure model config already in the database
 
@@ -119,6 +119,7 @@ class AzureModels(Table):
                 "WHERE id=%s",
                 (config.api_resource, config.api_version, config.api_key, config.api_deployment, config.id)
             )
+        return await self.retrieve(config.id)
 
     async def insert(
         self,

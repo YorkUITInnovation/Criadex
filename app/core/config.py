@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 from criadex.schemas import QdrantCredentials, MySQLCredentials
 from .schemas import AppMode, check_env_path
 
-ENV_PATH: str = os.environ.get('ENV_PATH', "../.env")
+ENV_PATH: str = os.environ.get('ENV_PATH', ".env")
 ENV_LOADED: bool = load_dotenv(dotenv_path=check_env_path(ENV_PATH))
 
 APP_MODE: AppMode = AppMode[os.environ.get('APP_API_MODE', AppMode.TESTING.name)]

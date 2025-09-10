@@ -1,6 +1,6 @@
 import pytest
 
-from utils.test_client import CriaTestClient, sample_master_key, sample_document_index, client
+from .utils.test_client import CriaTestClient
 
 
 @pytest.mark.asyncio

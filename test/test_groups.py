@@ -7,7 +7,7 @@ from app.controllers.groups.about import GroupAboutResponse
 from app.controllers.groups.create import GroupCreateResponse
 from app.controllers.groups.delete import GroupDeleteResponse
 from criadex.schemas import PartialGroupConfig
-from utils.test_client import CriaTestClient, sample_master_headers, client, assert_response_shape, sample_llm_id, sample_reranker_id, sample_embedding_id
+from .utils.test_client import CriaTestClient, assert_response_shape
 
 
 @pytest.mark.asyncio

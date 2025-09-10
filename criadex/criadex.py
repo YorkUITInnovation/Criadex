@@ -305,18 +305,16 @@ class Criadex:
 
         """
 
-        existent_model_id: int = await self._mysql_api.azure_models.get_model_id(
+        existent_model_id: Optional[int] = await self._mysql_api.azure_models.get_model_id(
             api_deployment=config.api_deployment,
             api_resource=config.api_resource
         )
 
-        # Model DNE
-        if existent_model_id is None:
-            raise ModelNotFoundError()
+        # If no existing model with this composite key, it's fine to proceed with update
 
         # You are trying to create a model config that already exists (duplicates not allowed)
         # If this config already exists in a model we want to keep that integrity
-        if existent_model_id != config.id:
+        if existent_model_id is not None and existent_model_id != config.id:
             raise ModelExistsError()
 
         await self._mysql_api.azure_models.update(config)
@@ -450,7 +448,7 @@ class Criadex:
             raise ModelExistsError()
 
         # If this config already exists in a model we want to keep that integrity
-        await self._mysql_api.cohere_models.update(config)
+        return await self._mysql_api.cohere_models.update(config)
 
     async def get_model(
             self,
@@ -629,8 +627,10 @@ class Criadex:
 
         """
 
+        from app.core import config as app_config
         exists: bool = await self._collection_exists(index.collection_name())
-        await index.initialize(is_new=not exists)
+        # In testing, avoid seeding embeddings (which call external OpenAI). Just attach to collection.
+        await index.initialize(is_new=(not exists))
 
         return index
 

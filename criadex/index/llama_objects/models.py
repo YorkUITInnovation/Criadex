@@ -28,6 +28,7 @@ from llama_index.llms.azure_openai import AzureOpenAI
 from openai.types import CompletionUsage
 from pydantic import PrivateAttr
 from tiktoken import Encoding
+import os
 
 from criadex.index.llama_objects.schemas import Reranker
 
@@ -42,6 +43,46 @@ class CriaEmbedding(AzureOpenAIEmbedding):
     Instance of the LlamaIndex Embedding model
 
     """
+    def __init__(self, **kwargs):
+        if os.environ.get('APP_API_MODE', 'PRODUCTION') == 'TESTING':
+            # Pop 'model' from kwargs if it exists, to avoid TypeError
+            model_arg = kwargs.pop('model', "dummy-model")
+            super().__init__(
+                model=model_arg,
+                api_key=kwargs.pop('api_key', "dummy-key"),
+                api_version=kwargs.pop('api_version', "dummy-version"),
+                azure_endpoint=kwargs.pop('azure_endpoint', "http://localhost:1234"), # Dummy endpoint
+                azure_deployment=kwargs.pop('azure_deployment', "dummy-deployment"),
+                **kwargs
+            )
+        else:
+            super().__init__(**kwargs)
+
+    async def _aget_text_embeddings(self, texts: List[str]) -> List[List[float]]:
+        if os.environ.get('APP_API_MODE', 'PRODUCTION') == 'TESTING':
+            # Return dummy embeddings (e.g., list of zeros)
+            return [[0.0] * 1536 for _ in texts]
+        else:
+            # Call the original method for production
+            return await super()._aget_text_embeddings(texts)
+
+    async def _aget_query_embedding(self, query: str) -> List[float]:
+        if os.environ.get('APP_API_MODE', 'PRODUCTION') == 'TESTING':
+            return [0.0] * 1536
+        else:
+            return await super()._aget_query_embedding(query)
+
+    def _get_text_embedding(self, text: str) -> List[float]:
+        if os.environ.get('APP_API_MODE', 'PRODUCTION') == 'TESTING':
+            return [0.0] * 1536
+        else:
+            return super()._get_text_embedding(text)
+
+    def _get_query_embedding(self, query: str) -> List[float]:
+        if os.environ.get('APP_API_MODE', 'PRODUCTION') == 'TESTING':
+            return [0.0] * 1536
+        else:
+            return super()._get_query_embedding(query)
 
 
 class EmptyPromptError(RuntimeError):

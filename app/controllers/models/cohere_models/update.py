@@ -30,7 +30,8 @@ view = APIRouter()
 
 
 class CohereModelUpdateResponse(AzureModelUpdateResponse):
-    pass
+    # Override type of `model` to CohereModelsModel for accurate validation
+    model: Optional[CohereModelsModel] = None
 
 
 @cbv(view)
@@ -73,16 +74,18 @@ class UpdateCohereModelRoute(CriaRoute):
         model: CohereModelsModel = await request.app.criadex.about_cohere_model(model_id=model_id)
 
         # Update fields
-        model.api_key = model_config.api_key
+        if model_config.api_key is not None:
+            model.api_key = model_config.api_key
 
         # Update DB
-        model: Optional[CohereModelsModel] = await request.app.criadex.update_cohere_model(config=model)
+        await request.app.criadex.update_cohere_model(config=model)
+        updated: CohereModelsModel = await request.app.criadex.about_cohere_model(model_id=model.id)
 
         return self.ResponseModel(
             code="SUCCESS",
             status=200,
             message="Successfully updated the model.",
-            model=model
+            model=updated
         )
 
 
