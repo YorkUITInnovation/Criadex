@@ -1,7 +1,10 @@
 python-multipart>=0.0.6
 fastapi==0.109.2
-starlette==0.35.1
+starlette==0.36.3
+httpx==0.25.2
 qdrant-client==1.12.1
+grpcio==1.62.2
+grpcio-tools==1.62.2
 aiomysql==0.2.0
 slowapi==0.1.9
 uvicorn==0.24.0.post1
@@ -23,7 +26,6 @@ llama-index-embeddings-azure-openai==0.3.0
 llama-index-llms-azure-openai==0.3.0
 llama-index-postprocessor-rankgpt-rerank==0.3.0
 llama-index-vector-stores-qdrant==0.4.0
-
 
 # Testing
 pytest==8.3.3
