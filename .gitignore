@@ -14,3 +14,6 @@ tiktoken
 
 # Doc
 doc/
+
+# Test
+__pycache__
