@@ -283,13 +283,18 @@ class CriadexBaseIndex(VectorStoreIndex):
         )
 
 
+class NodeLite(BaseModel):
+    text: typing.Optional[str] = None
+    metadata: dict = Field(default_factory=dict)
+
+
 class IndexResponse(BaseModel):
     """
     Response from an index search
 
     """
 
-    nodes: List[dict]
+    nodes: List[NodeLite]
     assets: List[AssetsModel] = Field(default_factory=list)
     search_units: int = 1
 
