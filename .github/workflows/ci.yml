@@ -9,7 +9,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        python-version: [3.10.12, 3.11, 3.12]
     services:
       mysql:
         image: mysql:8.4
@@ -33,16 +35,39 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up Python
+    - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
-        python-version: '3.x' # Use the latest Python 3 version
+        python-version: ${{ matrix.python-version }}
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pytest pytest-asyncio pytest-dotenv # Install pytest and plugins
+
+    - name: Create .env file with required variables
+      run: |
+        cat <<EOF > .env
+        QDRANT_HOST=localhost
+        QDRANT_PORT=6333
+        QDRANT_GRPC_PORT=6334
+        QDRANT_API_KEY=NONE
+        MYSQL_HOST=localhost
+        MYSQL_PORT=3306
+        MYSQL_USERNAME=root
+        MYSQL_PASSWORD=cria
+        MYSQL_DATABASE=criadex_test
+        APP_INITIAL_MASTER_KEY=password
+        TEST_MASTER_KEY=password
+        TEST_NON_MASTER_KEY=password-nomaster
+        TEST_DOCUMENT_GROUP=test-document-index
+        TEST_QUESTION_INDEX=test-question-index
+        TEST_LLM_ID=1
+        TEST_EMBEDDING_ID=2
+        TEST_RERANKER_ID=1
+        APP_API_MODE=TESTING
+        EOF
 
     - name: Wait for services (MySQL & Qdrant)
       shell: bash
@@ -55,26 +80,25 @@ jobs:
           if curl -sf http://127.0.0.1:6333/healthz >/dev/null; then echo "Qdrant is ready"; break; fi; sleep 1; done
 
     - name: Run tests
+      env:
+        QDRANT_HOST: localhost
+        QDRANT_PORT: 6333
+        QDRANT_GRPC_PORT: 6334
+        QDRANT_API_KEY: NONE
+        MYSQL_HOST: localhost
+        MYSQL_PORT: 3306
+        MYSQL_USERNAME: root
+        MYSQL_PASSWORD: cria
+        MYSQL_DATABASE: criadex_test
+        APP_INITIAL_MASTER_KEY: password
+        TEST_MASTER_KEY: password
+        TEST_NON_MASTER_KEY: password-nomaster
+        TEST_DOCUMENT_GROUP: test-document-index
+        TEST_QUESTION_INDEX: test-question-index
+        TEST_LLM_ID: 1
+        TEST_EMBEDDING_ID: 2
+        TEST_RERANKER_ID: 1
+        APP_API_MODE: TESTING
       run: |
-        # Set environment variables for testing
-        echo "APP_API_MODE=TESTING" >> $GITHUB_ENV
-        echo "QDRANT_HOST=localhost" >> $GITHUB_ENV
-        echo "QDRANT_PORT=6333" >> $GITHUB_ENV
-        echo "QDRANT_GRPC_PORT=6334" >> $GITHUB_ENV
-        echo "QDRANT_API_KEY=NONE" >> $GITHUB_ENV
-        echo "MYSQL_HOST=localhost" >> $GITHUB_ENV
-        echo "MYSQL_PORT=3306" >> $GITHUB_ENV
-        echo "MYSQL_USERNAME=root" >> $GITHUB_ENV
-        echo "MYSQL_PASSWORD=cria" >> $GITHUB_ENV
-        echo "MYSQL_DATABASE=criadex_test" >> $GITHUB_ENV
-        echo "APP_INITIAL_MASTER_KEY=password" >> $GITHUB_ENV
-        echo "TEST_MASTER_KEY=password" >> $GITHUB_ENV
-        echo "TEST_NON_MASTER_KEY=password-nomaster" >> $GITHUB_ENV
-        echo "TEST_DOCUMENT_GROUP=test-document-index" >> $GITHUB_ENV
-        echo "TEST_QUESTION_INDEX=test-question-index" >> $GITHUB_ENV
-        echo "TEST_LLM_ID=1" >> $GITHUB_ENV
-        echo "TEST_EMBEDDING_ID=2" >> $GITHUB_ENV
-        echo "TEST_RERANKER_ID=1" >> $GITHUB_ENV
-
         # Run tests
         pytest -s -v test

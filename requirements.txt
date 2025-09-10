@@ -1,5 +1,6 @@
 python-multipart>=0.0.6
 fastapi==0.109.2
+starlette==0.35.1
 qdrant-client==1.12.1
 aiomysql==0.2.0
 slowapi==0.1.9
