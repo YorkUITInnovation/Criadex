@@ -1,3 +1,9 @@
+# Local error definitions to replace legacy imports
+class EmptyPromptError(Exception):
+    pass
+
+class ContentFilterError(Exception):
+    pass
 """
 
 This file is part of Criadex.
@@ -25,17 +31,19 @@ from app.controllers.schemas import catch_exceptions, exception_response, APIRes
 from app.core.config import QUERY_MODEL_RATE_LIMIT_HOUR, QUERY_MODEL_RATE_LIMIT_DAY, QUERY_MODEL_RATE_LIMIT_MINUTE
 from app.core.route import CriaRoute
 from app.core.schemas import model_query_limiter
-from criadex.agent.azure.transform import TransformAgentResponse, TransformAgentConfig, TransformAgent
-from criadex.agent.azure_agent import LLMAgentModelConfig
-from criadex.index.llama_objects.models import EmptyPromptError, ContentFilterError
+from criadex.index.ragflow_objects.transform import RagflowTransformAgentResponse, RagflowTransformAgentConfig, RagflowTransformAgent
+from criadex.index.ragflow_objects.llm import RagflowLLMAgentModelConfig
+# Remove legacy import. If needed, define EmptyPromptError and ContentFilterError locally or import from new location.
 from criadex.schemas import ModelNotFoundError
 
 view = APIRouter()
 
 
+
+# Use RagflowTransformAgentResponse for agent_response, keep all error/status codes
 class AgentTransformResponse(APIResponse):
-    agent_response: Optional[TransformAgentResponse] = None
-    code: Union[SUCCESS, NOT_FOUND, INVALID_MODEL, INVALID_REQUEST, OPENAI_FILTER, ERROR]
+    agent_response: Optional[RagflowTransformAgentResponse] = None
+    code: str
 
 
 @cbv(view)
@@ -43,7 +51,7 @@ class ChatAgentRoute(CriaRoute):
     ResponseModel = AgentTransformResponse
 
     @view.post(
-        path="/models/azure/{model_id}/agents/transform",
+    path="/models/ragflow/{model_id}/agents/transform",
         name="Transform a query using chat history",
         summary="Transform a query using chat history",
         description="Modify the query to include chat history as part of the query",
@@ -78,17 +86,17 @@ class ChatAgentRoute(CriaRoute):
     @model_query_limiter.limit(QUERY_MODEL_RATE_LIMIT_DAY)
     @model_query_limiter.limit(QUERY_MODEL_RATE_LIMIT_HOUR)
     @model_query_limiter.limit(QUERY_MODEL_RATE_LIMIT_MINUTE)
-    async def execute(self, request: Request, model_id: int, config: TransformAgentConfig) -> ResponseModel:
-        agent: TransformAgent = TransformAgent(
+
+    async def execute(self, request: Request, model_id: int, config: RagflowTransformAgentConfig) -> AgentTransformResponse:
+        agent = RagflowTransformAgent(
             criadex=request.app.criadex,
             llm_model_id=model_id,
-            model_config=LLMAgentModelConfig(**config.dict())
+            model_config=config
         )
-
         return self.ResponseModel(
             code="SUCCESS",
             status=200,
-            message="Successfully queried the Azure model!",
+            message="Successfully queried the Ragflow model!",
             agent_response=await agent.execute(
                config=config
             )

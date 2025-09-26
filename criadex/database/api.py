@@ -28,6 +28,12 @@ from criadex.database.tables.groups import Groups
 
 
 class GroupDatabaseAPI(BaseDatabaseAPI):
+    async def shutdown(self) -> None:
+        """
+        Shutdown the database pool
+        """
+        self._pool.close()
+        await self._pool.wait_closed()
     """
     API for interfacing with the index group in the database
 

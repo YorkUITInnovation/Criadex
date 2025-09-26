@@ -65,39 +65,37 @@ class UploadContentRoute(CriaRoute):
             file: ContentUploadConfig
     ) -> ResponseModel:
 
-        # Get the group
         try:
-            group: Group = await request.app.criadex.get(group_name)
+            token_usage = await request.app.criadex.insert_file(
+                group_name=group_name,
+                file_name=file.file_name,
+                file_contents=file.file_contents
+            )
+            return self.ResponseModel(
+                code="SUCCESS",
+                status=200,
+                message="Successfully uploaded & indexed the content.",
+                token_usage=token_usage
+            )
         except GroupNotFoundError:
             return self.ResponseModel(
                 code="GROUP_NOT_FOUND",
                 status=404,
                 message=f"The requested index group '{group_name}' was not found"
             )
-
-        # Convert the file
-        try:
-            bundle: Bundle[BundleConfig] = await group.index.convert(
-                group_model=await request.app.criadex.get_model(group_name=group_name),
-                file=file
-            )
-        except ValidationError as ex:
+        except DocumentExistsError:
             return self.ResponseModel(
-                code="INVALID_FILE_DATA",
-                status=400,
-                message=(
-                        f"File type invalid. Does not match the required struct for this index type:\n"
-                        + ex.json()
-                )
+                code="DUPLICATE",
+                status=409,
+                message="Requested content already exists in the database."
             )
-
-        # Success!
-        return self.ResponseModel(
-            code="SUCCESS",
-            status=200,
-            message="Successfully uploaded & indexed the content.",
-            token_usage=await request.app.criadex.insert_file(group=group, bundle=bundle)
-        )
+        except Exception as e:
+            # Catch any other unexpected errors
+            return self.ResponseModel(
+                code="ERROR",
+                status=500,
+                message=f"An unexpected error occurred: {e}"
+            )
 
 
 __all__ = ["view"]

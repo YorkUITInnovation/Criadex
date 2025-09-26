@@ -88,6 +88,19 @@ class MySQLCredentials(BaseModel):
     database: str
 
 
+class ElasticsearchCredentials(BaseModel):
+    """
+    Model representing the credentials for accessing the Elasticsearch API
+
+    """
+
+    host: str
+    port: int
+    api_key: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+
 class IndexActivatedError(RuntimeError):
     """
     Thrown if the index is already activated

@@ -58,9 +58,3 @@ CREATE TABLE IF NOT EXISTS `Assets`
     FOREIGN KEY (document_id) REFERENCES `Documents` (id),
     FOREIGN KEY (group_id) REFERENCES `Groups` (id)
 );
-
--- Seed LLM model (id=1)
-INSERT INTO `AzureModels` (`api_resource`, `api_version`, `api_key`, `api_deployment`, `api_model`) VALUES ('test-resource', '2023-05-15', 'test-key', 'test-deployment', 'gpt-4o');
--- Seed Embedding model (id=2)
-INSERT INTO `AzureModels` (`api_resource`, `api_version`, `api_key`, `api_deployment`, `api_model`) VALUES ('test-resource-emb', '2023-05-15', 'test-key', 'test-deployment-emb', 'text-embedding-3-small');
-INSERT INTO `CohereModels` (`api_model`, `api_key`) VALUES ('rerank-multilingual-v2.0', 'test-key');

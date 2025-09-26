@@ -14,10 +14,6 @@ You should have received a copy of the GNU General Public License along with Cri
 
 """
 
-"""
-
-"""
-
 from typing import Optional, List, Union
 
 from fastapi import APIRouter
@@ -53,9 +49,9 @@ class ListGroupAuthRoute(CriaRoute):
         ResponseModel
     )
     async def execute(
-            self,
-            request: Request,
-            api_key: str
+        self,
+        request: Request,
+        api_key: str
     ) -> ResponseModel:
         # Get their auth model
         database: AuthDatabaseAPI = request.app.auth
@@ -69,8 +65,7 @@ class ListGroupAuthRoute(CriaRoute):
                 message="The requested authorization does not exist!"
             )
 
-        group_auth_models: Optional[List[GroupAuthorizationsModel]] = await database.group_authorizations. \
-            retrieve_by_authorization_id(
+        group_auth_models: Optional[List[GroupAuthorizationsModel]] = await database.group_authorizations.retrieve_by_authorization_id(
             authorization_id=auth_model.id
         )
 

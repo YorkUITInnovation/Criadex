@@ -20,7 +20,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-from criadex.schemas import QdrantCredentials, MySQLCredentials
+from criadex.schemas import ElasticsearchCredentials, MySQLCredentials
 from .schemas import AppMode, check_env_path
 
 ENV_PATH: str = os.environ.get('ENV_PATH', ".env")
@@ -55,11 +55,12 @@ A semantic search engine developed by [UIT Innovation](https://github.com/YorkUI
 """
 
 # Vector DB Config
-QDRANT_CREDENTIALS: QdrantCredentials = QdrantCredentials(
-    host=os.environ["QDRANT_HOST"],
-    port=os.environ["QDRANT_PORT"],
-    grpc_port=os.environ["QDRANT_GRPC_PORT"],
-    api_key=os.environ.get("QDRANT_API_KEY")
+ELASTICSEARCH_CREDENTIALS: ElasticsearchCredentials = ElasticsearchCredentials(
+    host=os.environ["ELASTICSEARCH_HOST"],
+    port=os.environ["ELASTICSEARCH_PORT"],
+    api_key=os.environ.get("ELASTICSEARCH_API_KEY"),
+    username=os.environ.get("ELASTICSEARCH_USERNAME"),
+    password=os.environ.get("ELASTICSEARCH_PASSWORD")
 )
 
 # MySQL Config

@@ -17,11 +17,12 @@ You should have received a copy of the GNU General Public License along with Cri
 import textwrap
 from typing import List, Optional
 
-from llama_index.core import PromptTemplate
-from llama_index.core.base.llms.types import ChatResponse, ChatMessage
+from criadex.index.ragflow_objects.transform import RagflowTransformAgent, RagflowTransformAgentResponse
+from criadex.index.ragflow_objects.schemas import RagflowChatMessage, RagflowChatResponse
 from pydantic import BaseModel
+from llama_index.core import PromptTemplate
 
-from ..azure_agent import LLMAgent, LLMAgentResponse
+from ..azure_agent import LLMAgentResponse
 
 
 class TransformAgentResponse(LLMAgentResponse):
@@ -30,7 +31,7 @@ class TransformAgentResponse(LLMAgentResponse):
 
 class TransformAgentConfig(BaseModel):
     prompt: str
-    history: List[ChatMessage]
+    history: List[RagflowChatMessage]
 
 
 CHAT_MESSAGE_PROMPT: PromptTemplate = PromptTemplate(
@@ -44,7 +45,8 @@ USER_MESSAGE_PROMPT: PromptTemplate = PromptTemplate(
         Prompt:
         {prompt}
         
-        Your Reply:\n
+        Your Reply:
+
     """)
 )
 
@@ -72,7 +74,7 @@ QUERY_AGENT_PROMPT: PromptTemplate = PromptTemplate(
 )
 
 
-class TransformAgent(LLMAgent):
+class TransformAgent(RagflowTransformAgent):
 
     async def execute(
             self,
@@ -84,18 +86,18 @@ class TransformAgent(LLMAgent):
             prompt=config.prompt
         )
 
-        history: List[ChatMessage] = [
-            ChatMessage(
+        history: List[RagflowChatMessage] = [
+            RagflowChatMessage(
                 role="system",
                 content=agent_prompt
             ),
-            ChatMessage(
+            RagflowChatMessage(
                 role="user",
                 content=user_prompt
             )
         ]
 
-        response: ChatResponse = await self.query_model(
+        response: RagflowChatResponse = await self.query_model(
             history=history
         )
 
@@ -106,7 +108,7 @@ class TransformAgent(LLMAgent):
         )
 
     @classmethod
-    def create_user_messages(cls, history: List[ChatMessage]) -> str:
+    def create_user_messages(cls, history: List[RagflowChatMessage]) -> str:
         message_str: str = ""
 
         for message in history:

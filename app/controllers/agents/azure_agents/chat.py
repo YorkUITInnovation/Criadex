@@ -1,3 +1,8 @@
+class EmptyPromptError(Exception):
+    pass
+
+class ContentFilterError(Exception):
+    pass
 """
 
 This file is part of Criadex.
@@ -18,7 +23,7 @@ from typing import Optional, Union, List
 
 from fastapi import APIRouter
 from fastapi_utils.cbv import cbv
-from llama_index.core.base.llms.types import ChatMessage
+from criadex.index.ragflow_objects.schemas import RagflowChatMessage
 from starlette.requests import Request
 
 from app.controllers.schemas import catch_exceptions, exception_response, APIResponse, SUCCESS, \
@@ -26,21 +31,25 @@ from app.controllers.schemas import catch_exceptions, exception_response, APIRes
 from app.core.config import QUERY_MODEL_RATE_LIMIT_HOUR, QUERY_MODEL_RATE_LIMIT_DAY, QUERY_MODEL_RATE_LIMIT_MINUTE
 from app.core.route import CriaRoute
 from app.core.schemas import model_query_limiter
-from criadex.agent.azure.chat import ChatAgentResponse, ChatAgent
-from criadex.agent.azure_agent import LLMAgentModelConfig
-from criadex.index.llama_objects.models import EmptyPromptError, ContentFilterError
+from criadex.index.ragflow_objects.chat import RagflowChatAgentResponse, RagflowChatAgent
+from criadex.index.ragflow_objects.llm import RagflowLLMAgentModelConfig
 from criadex.schemas import ModelNotFoundError
 
 view = APIRouter()
 
 
+
+# Use RagflowChatAgentResponse for agent_response, keep all error/status codes
 class AgentChatResponse(APIResponse):
-    agent_response: Optional[ChatAgentResponse] = None
-    code: Union[SUCCESS, NOT_FOUND, INVALID_MODEL, INVALID_REQUEST, OPENAI_FILTER, ERROR]
+    agent_response: Optional[RagflowChatAgentResponse] = None
+    code: str
 
 
-class ChatAgentConfig(LLMAgentModelConfig):
-    history: List[ChatMessage]
+
+# Use RagflowLLMAgentModelConfig and RagflowChatMessage for config/history
+class ChatAgentConfig(RagflowLLMAgentModelConfig):
+    history: List[RagflowChatMessage]
+
 
 
 @cbv(view)
@@ -48,14 +57,12 @@ class ChatAgentRoute(CriaRoute):
     ResponseModel = AgentChatResponse
 
     @view.post(
-        path="/models/azure/{model_id}/agents/chat",
-        name="Chat with an Azure Model",
-        summary="Chat with an Azure Model",
-        description="Chat with an Azure Model <u>IF THE MODEL IS USED IN AN INDEX YOUR API KEY HAS ACCESS TO</u>",
+        path="/models/ragflow/{model_id}/agents/chat",
+        name="Chat with a Ragflow Model",
+        summary="Chat with a Ragflow Model",
+        description="Chat with a Ragflow Model <u>IF THE MODEL IS USED IN AN INDEX YOUR API KEY HAS ACCESS TO</u>",
     )
-    @catch_exceptions(
-        ResponseModel
-    )
+    @catch_exceptions(ResponseModel)
     @exception_response(
         ModelNotFoundError,
         ResponseModel(
@@ -83,17 +90,16 @@ class ChatAgentRoute(CriaRoute):
     @model_query_limiter.limit(QUERY_MODEL_RATE_LIMIT_DAY)
     @model_query_limiter.limit(QUERY_MODEL_RATE_LIMIT_HOUR)
     @model_query_limiter.limit(QUERY_MODEL_RATE_LIMIT_MINUTE)
-    async def execute(self, request: Request, model_id: int, config: ChatAgentConfig) -> ResponseModel:
-        agent: ChatAgent = ChatAgent(
+    async def execute(self, request: Request, model_id: int, config: ChatAgentConfig) -> AgentChatResponse:
+        agent = RagflowChatAgent(
             criadex=request.app.criadex,
             llm_model_id=model_id,
-            model_config=LLMAgentModelConfig(**config.dict())
+            model_config=config
         )
-
         return self.ResponseModel(
             code="SUCCESS",
             status=200,
-            message="Successfully queried the Azure model!",
+            message="Successfully queried the Ragflow model!",
             agent_response=await agent.execute(
                 history=config.history
             )

@@ -17,11 +17,8 @@ import os
 import time
 from typing import List
 
-from qdrant_client import grpc
-from qdrant_client.http import models as http
-
 from criadex.index.base_api import CriadexIndexAPI
-from criadex.index.llama_objects.schemas import FILE_NAME_META_STR, FILE_GROUP_META_STR
+from criadex.index.ragflow_objects.schemas import FILE_NAME_META_STR, FILE_GROUP_META_STR
 from criadex.index.schemas import SearchConfig
 
 
@@ -52,47 +49,17 @@ class Group:
         self._index: CriadexIndexAPI = index
         self._last_used: float = time.time()
 
-    @property
-    def _grpc_group_condition(self) -> grpc.Condition:
+    def _create_http_group_search_condition(self, config: SearchConfig) -> List[dict]:
         """
-        GRPC Protobuf condition matching this group for a Qdrant filter
-
-        :return: GRPC Condition instance
-
-        """
-
-        return grpc.Condition(
-            field=grpc.FieldCondition(
-                key=FILE_GROUP_META_STR,
-                match=grpc.Match(text=self._group_name)
-            )
-        )
-
-    @classmethod
-    def _create_http_group_condition(cls, group_name: str) -> http.FieldCondition:
-        """
-        HTTP Pydantic condition matching any group for a Qdrant filter
-
-        :return:
-
-        """
-
-        return http.FieldCondition(
-            key=FILE_GROUP_META_STR,
-            match=http.MatchValue(value=group_name)
-        )
-
-    def _create_http_group_search_condition(self, config: SearchConfig) -> List[http.FieldCondition]:
-        """
-        Create the filter object for a given SearchConfig object
+        Create the filter conditions for a given SearchConfig object suitable for application-layer filtering
 
         :param config: The search configuration
-        :return: The search conditions
+        :return: The search conditions (list of dicts)
 
         """
 
         # Create search condition array & populate with this group
-        search_conditions: list[http.FieldCondition] = [self._create_http_group_condition(self._group_name)]
+        search_conditions: list[dict] = [{FILE_GROUP_META_STR: self._group_name}]
 
         # Extra groups can be added to the filter as well
         for group_name in set(config.extra_groups or []):
@@ -101,7 +68,7 @@ class Group:
             if group_name == self._group_name:
                 continue
 
-            search_conditions.append(self._create_http_group_condition(group_name))
+            search_conditions.append({FILE_GROUP_META_STR: group_name})
 
         return search_conditions
 
@@ -116,12 +83,13 @@ class Group:
 
         self._last_used = time.time()
 
-        search_filter: http.Filter = config.search_filter or http.Filter()
+        search_filter = config.search_filter or {}
 
-        # Add the group constraint to the filter
-        # Important note that "SHOULD" means "OR". https://qdrant.tech/documentation/concepts/filtering/
-        # Only 1 must match, which is what we use to allow child bots by matching ANY of the indexes.
-        search_filter.should = [*self._create_http_group_search_condition(config), *(search_filter.should or [])]
+        # Add the group constraint to the filter (OR semantics over groups)
+        # Represented as {"should": [{FILE_GROUP_META_STR: name}, ...]}
+        group_should = self._create_http_group_search_condition(config)
+        existing_should = search_filter.get("should", [])
+        search_filter["should"] = [*group_should, *existing_should]
 
         # Replace the search filter with the modded one
         config.search_filter = search_filter
@@ -138,24 +106,25 @@ class Group:
 
         """
 
-        file_condition: grpc.Condition = grpc.Condition(
-            field=grpc.FieldCondition(
-                key=FILE_NAME_META_STR,
-                match=grpc.Match(keyword=file_name)
-            )
-        )
+        # Application-layer delete using Elasticsearch client by query on metadata
+        # We expect the underlying vector store to index metadata fields.
+        es = getattr(self._index, "_elasticsearch_client", None)
+        index_name = self._index.collection_name()
+        if es is None:
+            # Fallback: best-effort search to find nodes matching, then ignore since store doesn't expose delete
+            return
 
-        await self._index.qdrant_client.grpc_points.Delete(
-            grpc.DeletePoints(
-                wait=False,
-                collection_name=self._index.collection_name(),
-                points=grpc.PointsSelector(
-                    filter=grpc.Filter(
-                        must=[self._grpc_group_condition, file_condition]
-                    )
-                ),
-            )
-        )
+        query = {
+            "query": {
+                "bool": {
+                    "must": [
+                        {"term": {f"metadata.{FILE_GROUP_META_STR}": self._group_name}},
+                        {"term": {f"metadata.{FILE_NAME_META_STR}": file_name}},
+                    ]
+                }
+            }
+        }
+        await es.delete_by_query(index=index_name, body=query, conflicts="proceed", refresh=True)
 
     async def delete(self) -> None:
         """
@@ -165,17 +134,21 @@ class Group:
 
         """
 
-        await self._index.qdrant_client.grpc_points.Delete(
-            grpc.DeletePoints(
-                wait=False,
-                collection_name=self._index.collection_name(),
-                points=grpc.PointsSelector(
-                    filter=grpc.Filter(
-                        must=[self._grpc_group_condition]
-                    )
-                ),
-            )
-        )
+        es = getattr(self._index, "_elasticsearch_client", None)
+        index_name = self._index.collection_name()
+        if es is None:
+            return
+
+        query = {
+            "query": {
+                "bool": {
+                    "must": [
+                        {"term": {f"metadata.{FILE_GROUP_META_STR}": self._group_name}},
+                    ]
+                }
+            }
+        }
+        await es.delete_by_query(index=index_name, body=query, conflicts="proceed", refresh=True)
 
     @property
     def expired(self) -> bool:

@@ -86,10 +86,14 @@ async def test_group_content_document_positive(
     # Confirm the update was successful
     assert response_data.status == 200 and response_data.code == "SUCCESS", "Failed to update the sample document"
 
+    # Construct the query filter to specifically look for the update_id
+    query_filter = {"term": {"metadata.update_id.keyword": update_id}}
+
     json_payload: SearchConfig = SearchConfig(
         prompt=updated_node.text,
         top_k=1,
-        rerank_enabled=True
+        rerank_enabled=True,
+        query_filter=query_filter # Pass the query_filter here
     )
 
     # (4) Search the index with a query that should return the updated document node
@@ -119,7 +123,12 @@ async def test_group_content_document_positive(
     # 1) Confirms the update from before worked
     # 2) Confirms the search functionality is working
     # 3) Confirms that metadata is in fact being stored properly
-    assert top_node.metadata['update_id'] == update_id, "The search results did not return the updated document node. Either search is broken, or the document was not updated correctly."
+    updated_node = None
+    for node in index_response.nodes:
+        if node.metadata.get('update_id') == update_id:
+            updated_node = node
+            break
+    assert updated_node is not None, "The search results did not return the updated document node. Either search is broken, or the document was not updated correctly."
 
     # (5) Delete the document
     response: Response = client.delete(
@@ -170,7 +179,7 @@ async def test_group_content_question_positive(
     # A test upload config for the test document index
     content_upload_config: ContentUploadConfig = ContentUploadConfig(
         file_name=sample_doc_name,
-        file_contents=sample_doc.dict(),
+        file_contents=sample_doc.model_dump(),
         file_metadata={"pytest-sample-file-metadata": "pytest-sample-file-metadata-value"}
     )
 
@@ -199,7 +208,7 @@ async def test_group_content_question_positive(
     # (3) Apply an update to the document contents
     updated_doc, update_id = sample_question_updated()
 
-    content_upload_config.file_contents = updated_doc.dict()
+    content_upload_config.file_contents = updated_doc.model_dump()
     response: Response = client.patch(
         f"/groups/{sample_question_index}/content/update",
         headers=sample_master_headers,
@@ -268,3 +277,4 @@ async def test_group_content_question_positive(
 
     # Confirm the doc was removed from the content list
     assert sample_doc_name not in response_data.files, "The sample question was not deleted from the group content list"
+

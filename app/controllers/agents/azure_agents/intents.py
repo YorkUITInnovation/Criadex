@@ -1,3 +1,9 @@
+# Local error definitions to replace legacy imports
+class EmptyPromptError(Exception):
+    pass
+
+class ContentFilterError(Exception):
+    pass
 """
 
 This file is part of Criadex.
@@ -25,21 +31,25 @@ from app.controllers.schemas import catch_exceptions, exception_response, APIRes
 from app.core.config import QUERY_MODEL_RATE_LIMIT_DAY, QUERY_MODEL_RATE_LIMIT_HOUR, QUERY_MODEL_RATE_LIMIT_MINUTE
 from app.core.route import CriaRoute
 from app.core.schemas import model_query_limiter
-from criadex.agent.azure.intents import IntentsAgent, IntentsAgentResponse, Intent
-from criadex.agent.azure_agent import LLMAgentModelConfig
-from criadex.index.llama_objects.models import EmptyPromptError, ContentFilterError
+from criadex.index.ragflow_objects.intents import RagflowIntentsAgent, RagflowIntentsAgentResponse, RagflowIntent
+from criadex.index.ragflow_objects.llm import RagflowLLMAgentModelConfig
+# Remove legacy import. If needed, define EmptyPromptError and ContentFilterError locally or import from new location.
 from criadex.schemas import ModelNotFoundError
 
 view = APIRouter()
 
 
+
+# Use RagflowIntentsAgentResponse for agent_response, keep all error/status codes
 class AgentIntentsResponse(APIResponse):
-    agent_response: Optional[IntentsAgentResponse] = None
-    code: Union[SUCCESS, NOT_FOUND, INVALID_MODEL, INVALID_REQUEST, OPENAI_FILTER, ERROR]
+    agent_response: Optional[RagflowIntentsAgentResponse] = None
+    code: str
 
 
-class IntentsAgentConfig(LLMAgentModelConfig):
-    intents: List[Intent]
+
+# Use RagflowLLMAgentModelConfig and RagflowIntent for config/intents
+class IntentsAgentConfig(RagflowLLMAgentModelConfig):
+    intents: List[RagflowIntent]
     prompt: str
 
 
@@ -48,7 +58,7 @@ class IntentsAgentRoute(CriaRoute):
     ResponseModel = AgentIntentsResponse
 
     @view.post(
-        path="/models/azure/{model_id}/agents/intents",
+    path="/models/ragflow/{model_id}/agents/intents",
         name="Use the Intents agent",
         summary="Use the Intents agent",
         description="Use the Intents agent",
@@ -92,18 +102,18 @@ class IntentsAgentRoute(CriaRoute):
     @model_query_limiter.limit(QUERY_MODEL_RATE_LIMIT_DAY)
     @model_query_limiter.limit(QUERY_MODEL_RATE_LIMIT_HOUR)
     @model_query_limiter.limit(QUERY_MODEL_RATE_LIMIT_MINUTE)
+
     async def execute(
             self,
             request: Request,
             model_id: int,
             config: IntentsAgentConfig
-    ) -> ResponseModel:
-        agent: IntentsAgent = IntentsAgent(
+    ) -> AgentIntentsResponse:
+        agent = RagflowIntentsAgent(
             criadex=request.app.criadex,
             llm_model_id=model_id,
-            model_config=LLMAgentModelConfig(**config.dict())
+            model_config=config
         )
-
         return self.ResponseModel(
             code="SUCCESS",
             status=200,

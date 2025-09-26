@@ -39,8 +39,7 @@ async def test_groups_positive(
     response: Response = client.post(
         f"/groups/{test_group}/create",
         headers=sample_master_headers,
-        json=test_payload.dict()
-    )
+                    json=test_payload.model_dump()    )
 
     response_data: GroupCreateResponse = assert_response_shape(response.json(), custom_shape=GroupCreateResponse)
 
@@ -75,3 +74,44 @@ async def test_groups_positive(
     response: Response = client.get(f"/groups/{test_group}/about", headers=sample_master_headers)
     response_data: GroupAboutResponse = assert_response_shape(response.json(), custom_shape=GroupAboutResponse, require_status=None, require_code=None)
     assert response_data.status == 404, "The test group still exists after deletion!"
+
+@pytest.mark.asyncio
+async def test_groups_negative_duplicate(
+        client: CriaTestClient,
+        sample_master_headers: dict,
+        sample_llm_id: int,
+        sample_embedding_id: int,
+        sample_reranker_id: int
+) -> None:
+    """
+    Test that creating a group with a duplicate name fails.
+    """
+    test_group: str = "pytest-" + str(uuid.uuid4())
+    test_payload: PartialGroupConfig = PartialGroupConfig(
+        type="DOCUMENT",
+        llm_model_id=sample_llm_id,
+        rerank_model_id=sample_reranker_id,
+        embedding_model_id=sample_embedding_id
+    )
+
+    # Create the test group
+    client.post(
+        f"/groups/{test_group}/create",
+        headers=sample_master_headers,
+        json=test_payload.model_dump()
+    )
+
+    # Try to create it again
+    response: Response = client.post(
+        f"/groups/{test_group}/create",
+        headers=sample_master_headers,
+        json=test_payload.model_dump()
+    )
+
+    response_data: GroupCreateResponse = assert_response_shape(response.json(), custom_shape=GroupCreateResponse, require_status=None, require_code=None)
+
+    assert response_data.status == 409
+    assert response_data.code == "DUPLICATE"
+
+    # cleanup
+    client.delete(f"/groups/{test_group}/delete", headers=sample_master_headers)

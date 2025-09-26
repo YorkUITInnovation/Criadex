@@ -21,13 +21,12 @@ import uuid
 from dataclasses import dataclass
 from typing import List, Sequence, Any, Optional, Union
 
-from llama_index.core.node_parser import NodeParser
-from llama_index.core.node_parser.node_utils import default_id_func
-from llama_index.core.postprocessor.types import BaseNodePostprocessor
-from llama_index.core.schema import BaseNode, TextNode, Document, NodeRelationship, NodeWithScore
+from criadex.index.ragflow_objects.document_parser import RagflowDocumentParser, default_id_func
+from criadex.index.ragflow_objects.postprocessor import RagflowNodePostprocessor
+from criadex.index.ragflow_objects.schemas import RagflowBaseNode, RagflowTextNode, RagflowDocument, RagflowNodeRelationship, RagflowNodeWithScore
 from pydantic import BaseModel, Field
 
-from criadex.index.llama_objects.postprocessor import CohereRerankPostprocessor
+## Removed legacy llama_objects import
 from criadex.index.schemas import RawAsset
 
 
@@ -92,14 +91,10 @@ class DocumentConfig(BaseModel):
     nodes: List[Element]
 
 
-class DocumentCohereRerank(CohereRerankPostprocessor):
-    """
-    Postprocessor for the document index
-
-    """
+## Remove legacy CohereRerankPostprocessor class
 
 
-class FuzzyMetadataDuplicateRemovalPostProcessor(BaseNodePostprocessor):
+class FuzzyMetadataDuplicateRemovalPostProcessor(RagflowNodePostprocessor):
     """
     Remove duplicates
 
@@ -118,7 +113,7 @@ class FuzzyMetadataDuplicateRemovalPostProcessor(BaseNodePostprocessor):
 
     def postprocess_nodes(
             self,
-            nodes: List[Union[TextNode, NodeWithScore]],
+            nodes: List[Union[RagflowTextNode, RagflowNodeWithScore]],
             _=None,
             __=None,
     ):
@@ -126,18 +121,16 @@ class FuzzyMetadataDuplicateRemovalPostProcessor(BaseNodePostprocessor):
 
     def _postprocess_nodes(
             self,
-            nodes: List[TextNode],
+            nodes: List[RagflowTextNode],
             _finished_reverse: bool = False
     ):
-        deduped_nodes: List[TextNode] = []
+        deduped_nodes: List[RagflowTextNode] = []
 
         for node in nodes:
-
             for deduped_node in deduped_nodes:
                 window_str: Optional[str] = node.metadata.get(self.target_metadata_key)
                 if (window_str and deduped_node.text in window_str) and deduped_node.text not in node.text:
                     node.metadata[self.target_metadata_key] = window_str.replace(deduped_node.text, "")
-
             deduped_nodes.append(node)
 
         deduped_nodes.reverse()
@@ -148,7 +141,7 @@ class FuzzyMetadataDuplicateRemovalPostProcessor(BaseNodePostprocessor):
         return deduped_nodes
 
 
-class DocumentParser(NodeParser):
+class DocumentParser(RagflowDocumentParser):
     """
     Parser for the document index. Takes document nodes in the above format (based on unstructured-api) and outputs Llama-Index nodes
 
@@ -166,11 +159,11 @@ class DocumentParser(NodeParser):
         return "question_parser"
 
     def get_nodes_from_documents(
-            self,
-            documents: Sequence[Document],
-            show_progress: bool = False,
-            **kwargs
-    ) -> List[BaseNode]:
+        self,
+        documents: Sequence[RagflowDocument],
+        show_progress: bool = False,
+        **kwargs
+    ) -> List[RagflowBaseNode]:
         """
         Convert an array of documents into an array of nodes
 
@@ -181,19 +174,14 @@ class DocumentParser(NodeParser):
 
         """
 
-        all_nodes: List[BaseNode] = []
-
+        all_nodes: List[RagflowBaseNode] = []
         for document in documents:
-            new_nodes: List[BaseNode] = self.build_nodes_from_document(
-                document=document
-            )
-
+            new_nodes: List[RagflowBaseNode] = self.build_nodes_from_document(document=document)
             all_nodes.extend(new_nodes)
-
         return all_nodes
 
     @classmethod
-    def build_nodes_from_document(cls, document: Document) -> List[TextNode]:
+    def build_nodes_from_document(cls, document: RagflowDocument) -> List[RagflowTextNode]:
         """
         Build nodes from the document
 
@@ -203,30 +191,24 @@ class DocumentParser(NodeParser):
         """
 
         config: DocumentConfig = DocumentConfig(**json.loads(document.text))
-        nodes: List[TextNode] = []
-
-        relationships = {NodeRelationship.SOURCE: document.as_related_node_info()}
-
+        nodes: List[RagflowTextNode] = []
+        relationships = {RagflowNodeRelationship.SOURCE: document.as_related_node_info()}
         for i, raw_node in enumerate(config.nodes):
-            new_node = TextNode(
+            new_node = RagflowTextNode(
                 id_=default_id_func(i, document),
                 text=raw_node.text,
                 excluded_embed_metadata_keys=document.excluded_embed_metadata_keys,
                 excluded_llm_metadata_keys=document.excluded_llm_metadata_keys,
-                metadata_seperator=document.metadata_seperator,
+                metadata_separator=document.metadata_separator,
                 metadata_template=document.metadata_template,
                 text_template=document.text_template,
                 relationships=relationships,
                 metadata={**document.metadata, **raw_node.metadata}
             )
-
-            nodes.append(
-                new_node
-            )
-
+            nodes.append(new_node)
         return nodes
 
-    def _parse_nodes(self, nodes: Sequence[BaseNode], show_progress: bool = False, **kwargs: Any) -> List[BaseNode]:
+    def _parse_nodes(self, nodes: Sequence[RagflowBaseNode], show_progress: bool = False, **kwargs: Any) -> List[RagflowBaseNode]:
         """
         Not needed by this subclass...
 

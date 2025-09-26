@@ -14,13 +14,7 @@ You should have received a copy of the GNU General Public License along with Cri
 
 """
 
-from __future__ import annotations
-
-import logging
-import os
-import warnings
-from contextlib import asynccontextmanager
-from typing import Any, List, AsyncContextManager, Optional
+from typing import Optional
 
 from fastapi import FastAPI
 from slowapi.errors import RateLimitExceeded
@@ -39,56 +33,53 @@ from .schemas import index_search_limiter, model_query_limiter, AppMode
 from ..controllers.schemas import RateLimitResponse
 
 
+import os
+import logging
+import warnings
+from typing import List, Optional, Any
+from contextlib import asynccontextmanager
+
 class CriadexAPI(FastAPI):
     """
     FastAPI server
-
     """
 
     ORIGINS: List[str] = [os.environ.get("APP_API_ORIGINS", "*")]
 
     def __init__(
-            self,
-            criadex: Criadex,
-            **extra: Any
+        self,
+        criadex: Criadex,
+        **extra: Any
     ):
         super().__init__(**extra)
 
         # FastAPI Setup
-        self.state: State = getattr(self, 'state', State())
-        self.logger: logging.Logger = logging.getLogger('uvicorn.info')
+        self.state = getattr(self, 'state', State())
+        self.logger = logging.getLogger('uvicorn.info')
 
         # Criadex Setup
-        self.criadex: Criadex = criadex
-        self.auth: Optional[AuthDatabaseAPI] = None
+        self.criadex = criadex
+        self.auth = None
 
     @classmethod
     def create(
-            cls,
-            criadex: Optional[Criadex] = None,
-    ) -> CriadexAPI:
+        cls,
+        criadex: Optional[Criadex] = None,
+    ):
         """
-        Generate an instance of the app
-
         :return: Instance of the FastAPI app
-
         """
-
         if config.APP_MODE == AppMode.TESTING:
             mysql_creds = config.MYSQL_CREDENTIALS.model_copy()
             mysql_creds.host = '127.0.0.1'
             mysql_creds.database = 'criadex_test'
-            qdrant_creds = config.QDRANT_CREDENTIALS.model_copy()
-            qdrant_creds.host = '127.0.0.1'
         else:
             mysql_creds = config.MYSQL_CREDENTIALS
-            qdrant_creds = config.QDRANT_CREDENTIALS
 
-        # Make more stuff
-        _app: CriadexAPI = CriadexAPI(
+        _app = CriadexAPI(
             criadex=criadex or Criadex(
                 mysql_credentials=mysql_creds,
-                qdrant_credentials=qdrant_creds
+                elasticsearch_credentials=config.ELASTICSEARCH_CREDENTIALS
             ),
             docs_url=None,
             openapi_url=None,
@@ -189,7 +180,7 @@ class CriadexAPI(FastAPI):
 
     @staticmethod
     @asynccontextmanager
-    async def app_lifespan(criadex_api: CriadexAPI) -> AsyncContextManager[None]:
+    async def app_lifespan(criadex_api):
         """
         Handle the lifespan of the app
 
@@ -212,7 +203,7 @@ class CriadexAPI(FastAPI):
     @classmethod
     async def _initialize(
             cls,
-            criadex_api: CriadexAPI
+            criadex_api
     ):
         await criadex_api.criadex.initialize()
         criadex_api.auth = AuthDatabaseAPI(pool=criadex_api.criadex.mysql_api.pool)

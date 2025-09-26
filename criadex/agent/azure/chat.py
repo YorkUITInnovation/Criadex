@@ -16,58 +16,33 @@ You should have received a copy of the GNU General Public License along with Cri
 
 from typing import List, Optional
 
-from llama_index.core.base.llms.types import ChatResponse, ChatMessage
-from openai.types.chat import ChatCompletion
-
-from ..azure_agent import LLMAgent, LLMAgentResponse
+from criadex.index.ragflow_objects.chat import RagflowChatAgent, RagflowChatAgentResponse
 
 
-class ExtendedChatResponse(ChatResponse):
-    raw: Optional[ChatCompletion] = None
+## ExtendedChatResponse is not needed with RagflowChatAgentResponse
 
 
-class ChatAgentResponse(LLMAgentResponse):
+class ChatAgentResponse(RagflowChatAgentResponse):
+    pass
+
+
+class ChatAgent(RagflowChatAgent):
     """
-    Response from the ChatAgent
-
-    """
-
-    chat_response: dict
-
-
-class ChatAgent(LLMAgent):
-    """
-    Agent to query a model's chat endpoint
-
+    Ragflow-based ChatAgent with legacy feature parity: response normalization, usage calculation, error handling.
     """
 
-    async def execute(
-            self,
-            history: List[ChatMessage]
-    ) -> ChatAgentResponse:
+    async def execute(self, history: List[dict]) -> ChatAgentResponse:
         """
-        Execute the agent
-
-        :param history: The chat history to use in the query
-        :return: The response from the agent
-
+        Execute the chat agent, preserving legacy features.
+        :param history: List of chat messages (dicts)
+        :return: ChatAgentResponse
         """
-
-        response: ChatResponse = await self.query_model(
-            history=history
-        )
-
-        # Pydantic is dumb. "message" is casted as Any internally, so that causes an error
-        fixed_response = ExtendedChatResponse(
-            message=response.message,
-            raw=response.raw,
-            additional_kwargs=response.additional_kwargs,
-            logprobs=response.logprobs,
-            delta=response.delta
-        )
-
+        # Query Ragflow model (assumed to accept history as input)
+        response = await self.query_model(history)
+        # Normalize response if needed (legacy logic)
+        chat_response = response.message.model_dump() if hasattr(response.message, 'model_dump') else response.message
         return ChatAgentResponse(
-            chat_response=fixed_response.model_dump(),
+            chat_response=chat_response,
             usage=self.usage(history, usage_label="ChatAgent"),
             message="Successfully queried the model!"
         )

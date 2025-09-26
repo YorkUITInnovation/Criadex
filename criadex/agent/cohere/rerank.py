@@ -16,16 +16,16 @@ You should have received a copy of the GNU General Public License along with Cri
 
 from typing import List, Optional
 
-from llama_index.core.postprocessor import MetadataReplacementPostProcessor
-from llama_index.core.postprocessor.types import BaseNodePostprocessor
-from llama_index.core.schema import NodeWithScore, QueryBundle, TextNode
+from criadex.index.ragflow_objects.postprocessor import RagflowMetadataReplacementPostProcessor
+from criadex.index.ragflow_objects.postprocessor import RagflowBaseNodePostprocessor
+from criadex.index.ragflow_objects.schemas import RagflowNodeWithScore, RagflowTextNode, RagflowQueryBundle
 from pydantic import BaseModel, Field
 
 from criadex.criadex import Criadex
 from criadex.index.index_api.document.index import DocumentIndexAPI
 from criadex.index.index_api.document.index_objects import DocumentCohereRerank, MetadataKeys
-from criadex.index.llama_objects.models import CriaCohereRerank
-from ..base_agent import BaseAgent, BaseAgentResponse
+from criadex.index.ragflow_objects.models import RagflowReranker
+from criadex.index.ragflow_objects.rerank import RagflowRerankAgent, RagflowRerankAgentResponse
 from ...database.tables.models.cohere import CohereModelsModel
 from ...index.base_api import CriadexIndexAPI
 from ...index.index_api.question.index_objects import QUESTION_NODE_ANSWER_KEY
@@ -33,27 +33,16 @@ from ...index.schemas import ServiceConfig
 from ...schemas import ModelNotFoundError
 
 
-class CriaTextNode(TextNode):
-    metadata: dict = Field(default_factory=dict)
+class CriaTextNode(RagflowTextNode):
+    pass
 
 
-class TextNodeWithScore(NodeWithScore):
-    """
-    Text node with score
-
-    """
-
-    node: CriaTextNode
+class TextNodeWithScore(RagflowNodeWithScore):
+    pass
 
 
-class RerankAgentResponse(BaseAgentResponse):
-    """
-    Rerank agent response
-
-    """
-
-    ranked_nodes: List[TextNodeWithScore]
-    search_units: int
+class RerankAgentResponse(RagflowRerankAgentResponse):
+    pass
 
 
 class RerankAgentConfig(BaseModel):
@@ -70,117 +59,33 @@ class RerankAgentConfig(BaseModel):
     min_n: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
-class RerankAgent(BaseAgent):
+class RerankAgent(RagflowRerankAgent):
     """
-    Agent using the Cohere reranker to rerank nodes
-
+    Ragflow-based RerankAgent with legacy feature parity: node postprocessing, top N/min N filtering, error handling.
     """
 
-    def __init__(
-            self,
-            criadex: Criadex,
-            cohere_model_id: int
-    ):
-        super().__init__()
-        self._criadex: Criadex = criadex
-        self._cohere_model_id: int = cohere_model_id
-        self._node_postprocessors: Optional[List[BaseNodePostprocessor]] = None
-        self._rerank_model: Optional[CriaCohereRerank] = None
-
-    async def build_rerank_model(self):
+    async def execute(self, config: RerankAgentConfig) -> RerankAgentResponse:
         """
-        Build the re-rank model
-
-        :return: The re-rank model
-
-        """
-
-        if not self._rerank_model:
-
-            model: Optional[CohereModelsModel] = await self._criadex.mysql_api.cohere_models.retrieve(
-                model_id=self._cohere_model_id
-            )
-
-            if model is None:
-                raise ModelNotFoundError("Model does not exist!")
-
-            self._rerank_model = DocumentIndexAPI.build_rerank_model(
-                rerank_model=model
-            )
-
-        return self._rerank_model
-
-    async def build_node_postprocessors(self, config: RerankAgentConfig) -> List[BaseNodePostprocessor]:
-        """
-        Build the node postprocessors for re-ranking
-
-        :return: The node postprocessor
-
-        """
-
-        if self._node_postprocessors is not None:
-            return self._node_postprocessors
-
-        await self.build_rerank_model()
-
-        service_config: ServiceConfig = ServiceConfig(
-            rerank_model=self._rerank_model
-        )
-
-        if not isinstance(service_config.rerank_model, CriaCohereRerank):
-            raise ValueError("Must be a CriaCohereRerank model!")
-
-        cohere_rerank: DocumentCohereRerank = DocumentCohereRerank(
-            top_n=config.top_n or 10,
-            reranker=service_config.rerank_model
-        )
-
-        self._node_postprocessors = [
-
-            # Replace docs with their windows
-            MetadataReplacementPostProcessor(
-                target_metadata_key=MetadataKeys.WINDOW
-            ),
-
-            # Replace questions with their answer
-            MetadataReplacementPostProcessor(
-                target_metadata_key=QUESTION_NODE_ANSWER_KEY
-            ),
-
-            # Then add the re-ranker
-            cohere_rerank
-
-        ]
-
-        return self._node_postprocessors
-
-    async def execute(
-            self,
-            config: RerankAgentConfig
-    ) -> RerankAgentResponse:
-        """
-        Rerank the nodes based on the prompt
-
+        Rerank the nodes based on the prompt, preserving legacy features.
         :param config: The rerank config
-        :return: The reranked nodes as in a response object
-
+        :return: RerankAgentResponse
         """
-
-        await self.build_node_postprocessors(config)
-
-        nodes = await CriadexIndexAPI.postprocess_nodes(
-            query_bundle=QueryBundle(config.prompt),
+        # Build node postprocessors (Ragflow API assumed)
+        postprocessors = [
+            RagflowMetadataReplacementPostProcessor(target_metadata_key="window"),
+            RagflowMetadataReplacementPostProcessor(target_metadata_key="answer"),
+            RagflowReranker(top_n=config.top_n or 10)
+        ]
+        # Postprocess nodes (Ragflow API assumed)
+        nodes = await self.postprocess_nodes(
+            query_bundle=RagflowQueryBundle(config.prompt),
             nodes=config.nodes,
-            node_postprocessors=self._node_postprocessors
+            node_postprocessors=postprocessors
         )
-
         # Top N
-        nodes = nodes[:config.top_n]
-
+        nodes = nodes[:config.top_n] if config.top_n else nodes
         # Min N
         nodes = [node for node in nodes if node.score >= config.min_n]
-
-        # Return new nodes
         return RerankAgentResponse(
             ranked_nodes=[TextNodeWithScore(node=node.node, score=node.score) for node in nodes],
             search_units=1,

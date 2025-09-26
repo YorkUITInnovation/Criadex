@@ -71,7 +71,7 @@ class AboutGroupRoute(CriaRoute):
             message=f"Successfully retrieved the group info for '{group_name}'.",
             info=GroupsPublicModel(
                 **{
-                    **group_model.dict(),
+                    **group_model.model_dump(),
                     "type": IndexType(group_model.type).name
                 }
             )

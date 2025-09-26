@@ -106,7 +106,53 @@ async def setup_database(event_loop):
 
 
 @pytest_asyncio.fixture(scope="session")
-async def client(setup_database) -> AsyncGenerator[CriaTestClient, None]:
+async def populate_models(setup_database):
+    """
+    Populate the database with dummy model data for tests.
+    """
+    from app.core import config
+    import aiomysql
+
+    if os.environ.get('APP_API_MODE', 'TESTING') == 'TESTING':
+        host = '127.0.0.1'
+        db_name = 'criadex_test'
+    else:
+        host = os.environ.get('MYSQL_HOST') or config.MYSQL_CREDENTIALS.host
+        db_name = os.environ.get('MYSQL_DATABASE', 'criadex')
+
+    # This is a bit of a hack; ideally the app would create the tables.
+    # We need to ensure the tables exist before we can insert data.
+    # Running the app's initialization logic here.
+    from app.core.app import CriadexAPI
+    app = CriadexAPI.create()
+    await app.criadex.initialize()
+    await app.criadex.shutdown() # Shutdown to release connections
+
+    async with aiomysql.connect(
+        host=host,
+        port=config.MYSQL_CREDENTIALS.port,
+        user=config.MYSQL_CREDENTIALS.username,
+        password=config.MYSQL_CREDENTIALS.password,
+        db=db_name
+    ) as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute("""
+                INSERT INTO AzureModels (id, api_resource, api_version, api_key, api_deployment, api_model)
+                VALUES
+                (1, 'test-resource', '2023-05-15', 'test-key', 'test-deployment', 'gpt-4'),
+                (2, 'test-resource-2', '2023-05-15', 'test-key-2', 'test-deployment-2', 'text-embedding-ada-002')
+            """)
+            await cursor.execute("""
+                INSERT INTO CohereModels (id, api_key, api_model)
+                VALUES
+                (1, 'test-cohere-key', 'rerank-english-v2.0'),
+                (3, 'test-cohere-key-3', 'rerank-english-v2.0')
+            """)
+        await conn.commit()
+
+
+@pytest_asyncio.fixture(scope="session")
+async def client(populate_models) -> AsyncGenerator[CriaTestClient, None]:
     """
     Get the test client
 
@@ -219,4 +265,17 @@ def sample_master_headers() -> dict:
 
     return {
         'X-Api-Key': _get_master_credentials()
+    }
+
+@pytest.fixture
+def sample_non_master_headers() -> dict:
+    """
+    Get the headers for a non-master key
+
+    :return: The headers
+
+    """
+
+    return {
+        'X-Api-Key': _get_non_master_credentials()
     }
