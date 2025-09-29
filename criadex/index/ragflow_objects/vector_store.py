@@ -17,6 +17,7 @@ from elasticsearch import Elasticsearch
 
 from typing import Any, Dict, List, Optional, Union
 import asyncio
+import json
 
 class RagflowVectorStore:
     def __init__(self, host, port, username=None, password=None, index_name="criadex", group_name=None):
@@ -42,8 +43,14 @@ class RagflowVectorStore:
                     "properties": {
                         "metadata": {
                             "properties": {
-                                "file_name": {"type": "keyword"}
+                                "file_name": {"type": "keyword"},
+                                "updated_at": {"type": "date"},
+                                "update_id": {"type": "keyword"} # Add this line
                             }
+                        },
+                        "embedding": {
+                            "type": "dense_vector",
+                            "dims": 768
                         }
                     }
                 }
@@ -56,12 +63,13 @@ class RagflowVectorStore:
 
     def insert(self, collection_name, doc_id, embedding, text, metadata=None):
         import logging
-        body = {"embedding": embedding, "text": text, "metadata": metadata or {}}
-        if self.group_name:
-            body["group_name"] = self.group_name
-        print(f"--- DEBUG: ES INSERT: doc_id={doc_id}, text={text!r}, metadata={body.get('metadata')!r} ---")
+        body = {"text": text, "embedding": embedding}
+        if metadata:
+            body["metadata"] = metadata
+        body["collection_name"] = collection_name # Add collection_name to the document
         logging.info(f"Elasticsearch insert: doc_id={doc_id}, metadata={body.get('metadata')}")
-        self.es.index(index=collection_name, id=doc_id, body=body, refresh=True)
+        
+        self.es.index(index=collection_name, id=doc_id, document=body, refresh=True)
 
     async def ainsert(self, collection_name, doc_id, embedding, text, metadata=None):
         loop = asyncio.get_event_loop()
@@ -82,31 +90,35 @@ class RagflowVectorStore:
                 }
             }
         }
-        self.es.delete_by_query(index=collection_name, body=query, refresh=True)
+        response = self.es.delete_by_query(index=collection_name, body=query, refresh=True)
+        self.es.indices.refresh(index=collection_name)
 
     async def adelete_by_query(self, collection_name, field, value):
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self.delete_by_query, collection_name, field, value)
 
-    def merge_filters(self, *filters: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def merge_filters(self, *filters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         # Merge multiple Elasticsearch filters (bool queries)
-        must = []
-        must_not = []
-        should = []
+        final_clauses = []
         for f in filters:
             if not f:
                 continue
-            must.extend(f.get("must", []))
-            must_not.extend(f.get("must_not", []))
-            should.extend(f.get("should", []))
-        merged = {"bool": {}}
-        if must:
-            merged["bool"]["must"] = must
-        if must_not:
-            merged["bool"]["must_not"] = must_not
-        if should:
-            merged["bool"]["should"] = should
-        return merged
+            if "bool" in f:
+                if "must" in f["bool"]:
+                    final_clauses.extend(f["bool"]["must"])
+                if "should" in f["bool"]:
+                    final_clauses.extend(f["bool"]["should"])
+                if "must_not" in f["bool"]:
+                    final_clauses.extend(f["bool"]["must_not"])
+            elif "must" in f:
+                final_clauses.extend(f["must"])
+            elif "should" in f:
+                final_clauses.extend(f["should"])
+            elif "must_not" in f:
+                final_clauses.extend(f["must_not"])
+            else:
+                final_clauses.append(f)
+        return final_clauses
 
     def build_query_filter(self, query: Union[Dict[str, Any], None], extra_filter: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         # Merge base query filter and extra filter
@@ -119,42 +131,48 @@ class RagflowVectorStore:
         return self.merge_filters(query, extra_filter)
 
     def search(self, collection_name, query_embedding, top_k=10, query_filter=None, sort=None):
-        # Support for custom filters and group filtering
-        base_query = {
-            "bool": {
-                "must": [
+        # Build the filter clauses
+        filters_to_merge = []
+
+        # Add user-provided query filter
+        if query_filter:
+            filters_to_merge.append(query_filter)
+
+        merged_filter_clauses = self.merge_filters(*filters_to_merge)
+        
+        # Construct the main query using function_score
+        main_query = {
+            "function_score": {
+                "query": {
+                    "bool": {
+                        "filter": merged_filter_clauses if merged_filter_clauses else [{"match_all": {}}]
+                    }
+                },
+                "functions": [
                     {
                         "script_score": {
-                            "query": {"match_all": {}},
                             "script": {
                                 "source": "cosineSimilarity(params.query_vector, 'embedding') + 1.0",
                                 "params": {"query_vector": query_embedding}
                             }
                         }
                     }
-                ]
+                ],
+                "boost_mode": "multiply"
             }
         }
-
-        filters_to_apply = []
-        if self.group_name:
-            filters_to_apply.append({"term": {"group_name": self.group_name}})
         
-        if query_filter:
-            filters_to_apply.append(query_filter) # Append the query_filter directly
-
-        if filters_to_apply:
-            base_query["bool"]["filter"] = filters_to_apply
 
         # Always sort by updated_at descending to get the latest node first
         search_kwargs = {
-            "index": collection_name,
-            "query": base_query,
+            "index": collection_name, # Use collection_name as the index
+            "query": main_query,
             "size": top_k,
             "sort": [{"metadata.updated_at": {"order": "desc"}}]
         }
+        
         result = self.es.search(**search_kwargs)
-        return result["hits"]["hits"]
+        return result["hits"]['hits']
 
     async def asearch(self, collection_name, query_embedding, top_k=10, query_filter=None, sort=None):
         loop = asyncio.get_event_loop()

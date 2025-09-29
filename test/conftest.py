@@ -5,6 +5,7 @@ import pytest_asyncio
 from typing import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
+import uuid
 
 # we need to import CriaTestClient from the other file
 from .utils.test_client import CriaTestClient
@@ -17,7 +18,7 @@ def event_loop():
     loop.close()
 
 @asynccontextmanager
-async def load_client() -> AsyncGenerator[CriaTestClient, None]:
+async def load_client(sample_document_index, sample_question_index) -> AsyncGenerator[CriaTestClient, None]:
     """
     Load the API as a TestClient instance for use in pytest
 
@@ -63,8 +64,8 @@ async def load_client() -> AsyncGenerator[CriaTestClient, None]:
                 if status not in (200, 409):
                     raise AssertionError(f"Failed to ensure group '{name}' exists for tests")
 
-            ensure_group(document_group, "DOCUMENT")
-            ensure_group(question_group, "QUESTION")
+            ensure_group(sample_document_index, "DOCUMENT")
+            ensure_group(sample_question_index, "QUESTION")
 
             # Ensure non-master key exists for group_auth tests
             key_payload = {"master": False}
@@ -152,14 +153,14 @@ async def populate_models(setup_database):
 
 
 @pytest_asyncio.fixture(scope="session")
-async def client(populate_models) -> AsyncGenerator[CriaTestClient, None]:
+async def client(populate_models, sample_document_index, sample_question_index) -> AsyncGenerator[CriaTestClient, None]:
     """
     Get the test client
 
     :return: Test client
     """
 
-    async with load_client() as test_client:
+    async with load_client(sample_document_index, sample_question_index) as test_client:
         yield test_client
 
 
@@ -209,7 +210,7 @@ def sample_non_master_key() -> str:
     return _get_non_master_credentials()
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def sample_document_index() -> str:
     """
     Get the document test group
@@ -218,10 +219,10 @@ def sample_document_index() -> str:
 
     """
 
-    return os.environ.get('TEST_DOCUMENT_GROUP', 'test-document-index')
+    return "test-document-index-" + str(uuid.uuid4())
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def sample_question_index() -> str:
     """
     Get the test question index
@@ -230,7 +231,7 @@ def sample_question_index() -> str:
 
     """
 
-    return os.environ.get('TEST_QUESTION_INDEX', 'test-question-index')
+    return "test-question-index-" + str(uuid.uuid4())
 
 
 @pytest.fixture

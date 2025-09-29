@@ -44,7 +44,8 @@ async def test_group_content_document_positive(
     content_upload_config: ContentUploadConfig = ContentUploadConfig(
         file_name=sample_doc_name,
         file_contents=sample_doc.model_dump(),
-        file_metadata={"pytest-sample-file-metadata": "pytest-sample-file-metadata-value"}
+            file_metadata={"pytest-sample-file-metadata": "pytest-sample-file-metadata-value"}
+
     )
 
     # (1) Upload the sample document
@@ -110,6 +111,8 @@ async def test_group_content_document_positive(
 
     index_response: IndexResponse = response_data.response
 
+    
+
     try:
         assert len(index_response.nodes) == 1
     except AssertionError:
@@ -125,6 +128,7 @@ async def test_group_content_document_positive(
     # 3) Confirms that metadata is in fact being stored properly
     updated_node = None
     for node in index_response.nodes:
+        
         if node.metadata.get('update_id') == update_id:
             updated_node = node
             break
@@ -180,7 +184,8 @@ async def test_group_content_question_positive(
     content_upload_config: ContentUploadConfig = ContentUploadConfig(
         file_name=sample_doc_name,
         file_contents=sample_doc.model_dump(),
-        file_metadata={"pytest-sample-file-metadata": "pytest-sample-file-metadata-value"}
+            file_metadata={"pytest-sample-file-metadata": "pytest-sample-file-metadata-value"}
+
     )
 
     # (1) Upload the sample document
@@ -277,4 +282,3 @@ async def test_group_content_question_positive(
 
     # Confirm the doc was removed from the content list
     assert sample_doc_name not in response_data.files, "The sample question was not deleted from the group content list"
-

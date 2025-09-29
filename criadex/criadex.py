@@ -218,38 +218,32 @@ class Criadex:
 
         if 'nodes' in file_contents:
             doc_config = DocumentConfig(**file_contents)
-            for idx, node in enumerate(doc_config.nodes):
-                node_data = {'text': node.text, 'metadata': dict(node.metadata)}
-                # Explicitly set update_id in metadata for the last node if present in text
-                if idx == len(doc_config.nodes) - 1 and '[update_id=' in node.text:
-                    try:
-                        update_id = node.text.split('[update_id=')[1].split(']')[0]
-                        node_data['metadata']['update_id'] = update_id
-                    except Exception:
-                        pass
+            for node in doc_config.nodes:
+                # Preserve the original metadata from the node
+                node_data = {
+                    'text': node.text, 
+                    'metadata': node.metadata.copy() if node.metadata else {}
+                }
                 nodes_to_insert.append(node_data)
         elif 'questions' in file_contents:
             # For QuestionConfig, create a node for each question and the answer
             for question_text in file_contents['questions']:
                 nodes_to_insert.append({'text': question_text, 'metadata': {}})
             if 'answer' in file_contents:
-                 nodes_to_insert.append({'text': file_contents['answer'], 'metadata': {}})
+                nodes_to_insert.append({'text': file_contents['answer'], 'metadata': {}})
 
-
-        import copy
         for i, node_data in enumerate(nodes_to_insert):
             text = node_data['text']
-            metadata = copy.deepcopy(node_data['metadata'])
-            metadata['file_name'] = file_name
-            metadata['updated_at'] = time.time()
-            if '[update_id=' in text:
-                try:
-                    update_id = text.split('[update_id=')[1].split(']')[0]
-                    metadata['update_id'] = update_id
-                except Exception:
-                    pass
+            
+            # Start with the node's existing metadata, then add system metadata
+            metadata = node_data.get('metadata', {}).copy()
+            metadata.update({
+                'file_name': file_name,
+                'updated_at': int(time.time() * 1000)
+            })
+            
             embedding = self.embedder.embed(text)
-            total_tokens += len(text.split()) # A rough token count
+            total_tokens += len(text.split())
             doc_id = f"{file_name}-{i}"
 
             await self.vector_store.ainsert(
@@ -272,17 +266,11 @@ class Criadex:
         document: DocumentsModel = await self.mysql_api.documents.retrieve(group_id=group_id, document_name=document_name)
         logging.info(f"Deleting all nodes for file: {document_name} in group: {group_name}")
 
-        # Get all doc_ids for the given file_name
-        search_results = await self.vector_store.asearch(
+        await self.vector_store.adelete_by_query(
             collection_name=group_name,
-            query_embedding=[0.0] * 768, # Dummy embedding, as we are searching by metadata
-            query_filter={"must": [{"term": {"metadata.file_name.keyword": document_name}}]},
-            top_k=10000 # Get all documents
+            field="file_name",
+            value=document_name
         )
-
-        for hit in search_results:
-            doc_id = hit['_id']
-            await self.vector_store.adelete(collection_name=group_name, doc_id=doc_id)
 
         await self.mysql_api.assets.delete_all_document_assets(document_id=document.id)
         await self.mysql_api.documents.delete(group_id=group_id, document_name=document.name)

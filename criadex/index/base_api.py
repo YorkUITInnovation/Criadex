@@ -32,6 +32,7 @@ class ContentUploadConfig(BaseModel):
     file_name: str
     file_contents: dict
     file_metadata: dict
+    
 
 class CriadexIndexAPI(Generic[BundleConfig]):
     def _matches_filter(self, node: dict, search_filter: Dict[str, Any]) -> bool:
