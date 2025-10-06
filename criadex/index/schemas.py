@@ -299,6 +299,7 @@ class Bundle(BaseModel, Generic[BundleConfig]):
             text=self.config.model_dump_json(),
             doc_id=self.name,
             metadata=metadata,
+            collection_name=self.group.name, # Add collection_name here
             excluded_llm_metadata_keys=excluded_llm_keys,
             excluded_embed_metadata_keys=excluded_embed_keys
         )

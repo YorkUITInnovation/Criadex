@@ -1,3 +1,4 @@
+import asyncio
 import json
 import uuid
 
@@ -44,8 +45,10 @@ async def test_group_content_document_positive(
     content_upload_config: ContentUploadConfig = ContentUploadConfig(
         file_name=sample_doc_name,
         file_contents=sample_doc.model_dump(),
-            file_metadata={"pytest-sample-file-metadata": "pytest-sample-file-metadata-value"}
-
+        file_metadata={
+            "pytest-sample-file-metadata": "pytest-sample-file-metadata-value",
+            "update_id": "initial_upload" # Add a placeholder update_id
+        }
     )
 
     # (1) Upload the sample document
@@ -75,11 +78,19 @@ async def test_group_content_document_positive(
     updated_node = updated_doc.nodes[-1]
     update_id: str = updated_node.metadata['update_id']
 
-    content_upload_config.file_contents = updated_doc.model_dump()
+    # Create a new ContentUploadConfig for the update, including the new update_id in file_metadata
+    content_upload_config_for_update: ContentUploadConfig = ContentUploadConfig(
+        file_name=sample_doc_name, # Same file name
+        file_contents=updated_doc.model_dump(),
+        file_metadata={
+            "pytest-sample-file-metadata": "pytest-sample-file-metadata-value",
+            "update_id": update_id # Use the actual update_id here
+        }
+    )
     response: Response = client.patch(
         f"/groups/{sample_document_index}/content/update",
         headers=sample_master_headers,
-        json=json.loads(content_upload_config.model_dump_json())
+        json=json.loads(content_upload_config_for_update.model_dump_json()) # Use the new config
     )
 
     response_data: ContentUpdateResponse = assert_response_shape(response.json(), custom_shape=ContentUpdateResponse)
@@ -98,6 +109,7 @@ async def test_group_content_document_positive(
     )
 
     # (4) Search the index with a query that should return the updated document node
+    await asyncio.sleep(3) # Give Elasticsearch some time to index
     response: Response = client.post(
         f"/groups/{sample_document_index}/content/search",
         headers=sample_master_headers,
@@ -111,13 +123,7 @@ async def test_group_content_document_positive(
 
     index_response: IndexResponse = response_data.response
 
-    
-
-    try:
-        assert len(index_response.nodes) == 1
-    except AssertionError:
-        assert len(index_response.nodes) < 1, "The search results returned more than one node! Top_K and/or Top_N was ignored."
-        assert len(index_response.nodes) > 1, "The search results returned less than one node! Top_K and/or Top_N was ignored."
+    assert len(index_response.nodes) == 1, "The search results returned an unexpected number of nodes."
 
     top_node = index_response.nodes[0]
 
@@ -184,8 +190,10 @@ async def test_group_content_question_positive(
     content_upload_config: ContentUploadConfig = ContentUploadConfig(
         file_name=sample_doc_name,
         file_contents=sample_doc.model_dump(),
-            file_metadata={"pytest-sample-file-metadata": "pytest-sample-file-metadata-value"}
-
+        file_metadata={
+            "pytest-sample-file-metadata": "pytest-sample-file-metadata-value",
+            "update_id": "initial_upload" # Add a placeholder update_id
+        }
     )
 
     # (1) Upload the sample document
@@ -213,11 +221,19 @@ async def test_group_content_question_positive(
     # (3) Apply an update to the document contents
     updated_doc, update_id = sample_question_updated()
 
-    content_upload_config.file_contents = updated_doc.model_dump()
+    # Create a new ContentUploadConfig for the update, including the new update_id in file_metadata
+    content_upload_config_for_update: ContentUploadConfig = ContentUploadConfig(
+        file_name=sample_doc_name, # Same file name
+        file_contents=updated_doc.model_dump(),
+        file_metadata={
+            "pytest-sample-file-metadata": "pytest-sample-file-metadata-value",
+            "update_id": update_id # Use the actual update_id here
+        }
+    )
     response: Response = client.patch(
         f"/groups/{sample_question_index}/content/update",
         headers=sample_master_headers,
-        json=json.loads(content_upload_config.model_dump_json())
+        json=json.loads(content_upload_config_for_update.model_dump_json()) # Use the new config
     )
 
     response_data: ContentUpdateResponse = assert_response_shape(response.json(), custom_shape=ContentUpdateResponse)
@@ -232,6 +248,7 @@ async def test_group_content_question_positive(
     )
 
     # (4) Search the index with a query that should return the updated document node
+    await asyncio.sleep(3) # Give Elasticsearch some time to index
     response: Response = client.post(
         f"/groups/{sample_question_index}/content/search",
         headers=sample_master_headers,
@@ -245,11 +262,7 @@ async def test_group_content_question_positive(
 
     index_response: IndexResponse = response_data.response
 
-    try:
-        assert len(index_response.nodes) == 1
-    except AssertionError:
-        assert len(index_response.nodes) < 1, "The question search results returned more than one node! Top_K and/or Top_N was ignored."
-        assert len(index_response.nodes) > 1, "The question search results returned less than one node! Top_K and/or Top_N was ignored."
+    assert len(index_response.nodes) == 1, "The search results returned an unexpected number of nodes."
 
     top_node = index_response.nodes[0]
 

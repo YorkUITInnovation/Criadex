@@ -18,11 +18,12 @@ from abc import abstractmethod
 from typing import Optional, List, Sequence, Generic, Any, Dict
 
 from typing import Optional, List, Generic, Any, Dict
-from criadex.index.schemas import ServiceConfig, BundleConfig
+from criadex.index.schemas import ServiceConfig, BundleConfig, NodeLite
 from ..database.api import GroupDatabaseAPI
 from ..database.tables.groups import GroupsModel
 from criadex.index.ragflow_objects.schemas import RagflowDocument, RagflowQuery
 
+import json
 from pydantic import BaseModel
 
 class ContentUploadConfig(BaseModel):
@@ -32,7 +33,7 @@ class ContentUploadConfig(BaseModel):
     file_name: str
     file_contents: dict
     file_metadata: dict
-    
+
 
 class CriadexIndexAPI(Generic[BundleConfig]):
     def _matches_filter(self, node: dict, search_filter: Dict[str, Any]) -> bool:
@@ -127,11 +128,68 @@ class CriadexIndexAPI(Generic[BundleConfig]):
         :param document: The document to insert
         :return: The token cost to insert the file
         """
-        if hasattr(self._index, 'insert_document'):
-            return await self._index.insert_document(document=document)
-        return 0
+        token_cost = 0
+        parsed_config = json.loads(document.text)
 
+        # Assuming document.metadata contains the top-level metadata like update_id
+        # and document.doc_id is the file_name
 
+        # Handle DocumentConfig
+        if 'nodes' in parsed_config and isinstance(parsed_config['nodes'], list):
+            for i, node_data in enumerate(parsed_config['nodes']):
+                node_id = f"{document.doc_id}-{i}"
+                node_text = node_data.get('text', '')
+                node_metadata = {**document.metadata, **node_data.get('metadata', {})} # Merge document metadata with node metadata
+                
+                # Generate a dummy embedding for now
+                embedding = [1.0] * 768 # Assuming 768 dimensions
+
+                await self._index.ainsert(
+                    collection_name=document.collection_name,
+                    doc_id=node_id,
+                    embedding=embedding,
+                    text=node_text,
+                    metadata=node_metadata
+                )
+                # TODO: Calculate actual token cost
+                token_cost += 1 # Placeholder
+
+        # Handle QuestionConfig (assuming it has 'questions' and 'answer' fields)
+        elif 'questions' in parsed_config and isinstance(parsed_config['questions'], list):
+            # For questions, we might want to index each question and the answer as separate nodes
+            # or combine them. For now, let's index the first question and the answer.
+            
+            # Index the first question
+            if parsed_config['questions']:
+                question_text = parsed_config['questions'][0]
+                question_id = f"{document.doc_id}-q0"
+                question_metadata = {**document.metadata} # Use document metadata
+                embedding = [1.0] * 768
+                await self._index.ainsert(
+                    collection_name=document.collection_name,
+                    doc_id=question_id,
+                    embedding=embedding,
+                    text=question_text,
+                    metadata=question_metadata
+                )
+                token_cost += 1
+
+            # Index the answer
+            if 'answer' in parsed_config and parsed_config['answer']:
+                answer_text = parsed_config['answer']
+                answer_id = f"{document.doc_id}-a0"
+                answer_metadata = {**document.metadata} # Use document metadata
+                embedding = [1.0] * 768
+                await self._index.ainsert(
+                    collection_name=document.collection_name,
+                    doc_id=answer_id,
+                    embedding=embedding,
+                    text=answer_text,
+                    metadata=answer_metadata
+                )
+                token_cost += 1
+        
+        return token_cost
 
 
     async def convert(self, group_model: GroupsModel, file: ContentUploadConfig) -> Any:
@@ -161,5 +219,3 @@ class CriadexIndexAPI(Generic[BundleConfig]):
         :return: The service config
         """
         return self._service_config
-
-

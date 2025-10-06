@@ -241,7 +241,4 @@ async def get_api_key_model_query(
     return api_key
 
 
-class UnauthorizedResponse(APIResponse):
-    code: UNAUTHORIZED = "UNAUTHORIZED"
-    status: int = 401
-    detail: Optional[str]
+

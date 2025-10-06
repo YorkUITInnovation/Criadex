@@ -204,7 +204,7 @@ class Criadex:
             raise GroupNotFoundError()
         return self
 
-    async def insert_file(self, group_name: str, file_name: str, file_contents: dict) -> int:
+    async def insert_file(self, group_name: str, file_name: str, file_contents: dict, file_metadata: dict) -> int:
         """
         Insert a file into the group.
         """
@@ -235,8 +235,9 @@ class Criadex:
         for i, node_data in enumerate(nodes_to_insert):
             text = node_data['text']
             
-            # Start with the node's existing metadata, then add system metadata
+            # Start with the node's existing metadata, then add system metadata and file_metadata
             metadata = node_data.get('metadata', {}).copy()
+            metadata.update(file_metadata) # <--- Add this line to merge file_metadata
             metadata.update({
                 'file_name': file_name,
                 'updated_at': int(time.time() * 1000)
@@ -275,9 +276,9 @@ class Criadex:
         await self.mysql_api.assets.delete_all_document_assets(document_id=document.id)
         await self.mysql_api.documents.delete(group_id=group_id, document_name=document.name)
 
-    async def update_file(self, group_name: str, file_name: str, file_contents: dict) -> int:
+    async def update_file(self, group_name: str, file_name: str, file_contents: dict, file_metadata: dict) -> int:
         await self.delete_file(group_name=group_name, document_name=file_name)
-        result = await self.insert_file(group_name=group_name, file_name=file_name, file_contents=file_contents)
+        result = await self.insert_file(group_name=group_name, file_name=file_name, file_contents=file_contents, file_metadata=file_metadata)
         # Clear cache for this group/file after update
         if self.cache:
             self.cache.clear()

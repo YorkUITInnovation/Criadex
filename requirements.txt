@@ -25,7 +25,8 @@ ragflow==0.0.1
 
 # Testing
 pytest==8.3.3
-pytest-asyncio==0.17.0
+pytest-cov==4.1.0
+pytest-asyncio==1.2.0
 
 # Fix for fastapi-utils dependency
 typing-inspect

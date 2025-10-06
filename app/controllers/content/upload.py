@@ -69,7 +69,8 @@ class UploadContentRoute(CriaRoute):
             token_usage = await request.app.criadex.insert_file(
                 group_name=group_name,
                 file_name=file.file_name,
-                file_contents=file.file_contents
+                file_contents=file.file_contents,
+                file_metadata=file.file_metadata # Add this line
             )
             return self.ResponseModel(
                 code="SUCCESS",

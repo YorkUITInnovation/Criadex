@@ -25,3 +25,4 @@ __pycache__/
 
 # Test
 .pytest_cache
+.coverage

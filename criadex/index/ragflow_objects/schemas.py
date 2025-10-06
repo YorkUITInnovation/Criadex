@@ -57,7 +57,7 @@ class RagflowReranker:
         self.params = params or {}
 
 class RagflowDocument:
-    def __init__(self, doc_id: str, text: str, metadata: Optional[Dict[str, Any]] = None):
+    def __init__(self, doc_id: str, text: str, metadata: Optional[Dict[str, Any]] = None, collection_name: str = None):
         self.doc_id = doc_id
         self.text = text
         self.metadata = metadata or {}

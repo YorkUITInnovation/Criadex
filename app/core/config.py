@@ -57,7 +57,7 @@ A semantic search engine developed by [UIT Innovation](https://github.com/YorkUI
 # Vector DB Config
 ELASTICSEARCH_CREDENTIALS: ElasticsearchCredentials = ElasticsearchCredentials(
     host=os.environ["ELASTICSEARCH_HOST"],
-    port=os.environ["ELASTICSEARCH_PORT"],
+    port=int(os.environ["ELASTICSEARCH_PORT"]),
     api_key=os.environ.get("ELASTICSEARCH_API_KEY"),
     username=os.environ.get("ELASTICSEARCH_USERNAME"),
     password=os.environ.get("ELASTICSEARCH_PASSWORD")
@@ -66,7 +66,7 @@ ELASTICSEARCH_CREDENTIALS: ElasticsearchCredentials = ElasticsearchCredentials(
 # MySQL Config
 MYSQL_CREDENTIALS: MySQLCredentials = MySQLCredentials(
     host=os.environ["MYSQL_HOST"],
-    port=os.environ["MYSQL_PORT"],
+    port=int(os.environ["MYSQL_PORT"]),
     username=os.environ["MYSQL_USERNAME"],
     database=os.environ["MYSQL_DATABASE"],
     password=os.environ.get("MYSQL_PASSWORD"),
