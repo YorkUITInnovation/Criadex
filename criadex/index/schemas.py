@@ -31,6 +31,35 @@ from criadex.database.tables.groups import GroupsModel
 from criadex.index.ragflow_objects.schemas import RagflowDocument, RagflowTransformComponent, RagflowBaseNode, RagflowIndexNode, TOKEN_COUNT_METADATA_KEY, FILE_GROUP_META_STR, FILE_NAME_META_STR, FILE_CREATED_AT_META_STR, FILE_GROUP_ID_META_STR, RagflowReranker
 from criadex.schemas import IndexType
 
+
+class BaseNode(BaseModel):
+    metadata: dict
+    excluded_embed_metadata_keys: List[str] = []
+    excluded_llm_metadata_keys: List[str] = []
+    class_name: str
+
+class TextNode(BaseNode):
+    text: str
+    text_template: str
+    metadata_template: str
+
+class NodeWithScore(BaseModel):
+    node: BaseNode
+    score: float
+
+class TextNodeWithScore(NodeWithScore):
+    node: TextNode
+
+class Asset(BaseModel):
+    id: int
+    uuid: str
+    document_id: int
+    group_id: int
+    mimetype: str
+    data: str
+    created: str
+    description: str
+
 if typing.TYPE_CHECKING:
     from criadex.index.index_api.document.index_objects import Element, DocumentConfig
 
@@ -200,19 +229,14 @@ class CriadexBaseIndex:
         pass
 
 
-class NodeLite(BaseModel):
-    text: typing.Optional[str] = None
-    metadata: dict = Field(default_factory=dict)
-
-
 class IndexResponse(BaseModel):
     """
     Response from an index search
 
     """
 
-    nodes: List[NodeLite]
-    assets: List[AssetsModel] = Field(default_factory=list)
+    nodes: List[TextNodeWithScore]
+    assets: List[Asset] = Field(default_factory=list)
     search_units: int = 1
 
 
@@ -229,7 +253,7 @@ class SearchConfig(BaseModel):
 
     """
 
-    prompt: str
+    query: str
 
     # Vector DB
     top_k: int = Field(default=1, ge=1, le=1000)

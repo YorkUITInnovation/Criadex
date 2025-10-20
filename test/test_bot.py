@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from criadex.bot.bot import Bot
-from criadex.index.schemas import IndexResponse, NodeLite
+from criadex.index.schemas import IndexResponse, TextNodeWithScore
 
 @pytest.mark.asyncio
 async def test_bot_search():
@@ -48,6 +48,6 @@ async def test_bot_search():
 
     # Assert that the response contains the expected node
     assert len(response.nodes) == 1
-    assert isinstance(response.nodes[0], NodeLite)
-    assert response.nodes[0].text == 'This is a test node.'
-    assert response.nodes[0].metadata == {'file_name': 'test.txt'}
+    assert isinstance(response.nodes[0], TextNodeWithScore)
+    assert response.nodes[0].node.text == 'This is a test node.'
+    assert response.nodes[0].node.metadata == {'file_name': 'test.txt'}

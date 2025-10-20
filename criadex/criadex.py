@@ -329,7 +329,7 @@ class Criadex:
             return cached # Return the cached result
         
         # If not cached, perform the search
-        results = await self.bot.search(group_name, query.prompt, top_k=query.top_k, query_filter=query_filter)
+        results = await self.bot.search(group_name, query.query, top_k=query.top_k, query_filter=query_filter)
         
         # Cache the new result
         self.cache.set(cache_key, results)

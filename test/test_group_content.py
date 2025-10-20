@@ -102,7 +102,7 @@ async def test_group_content_document_positive(
     query_filter = {"term": {"metadata.update_id.keyword": update_id}}
 
     json_payload: SearchConfig = SearchConfig(
-        prompt=updated_node.text,
+        query=updated_node.text,
         top_k=1,
         rerank_enabled=True,
         query_filter=query_filter # Pass the query_filter here
@@ -134,8 +134,8 @@ async def test_group_content_document_positive(
     # 3) Confirms that metadata is in fact being stored properly
     updated_node = None
     for node in index_response.nodes:
-        
-        if node.metadata.get('update_id') == update_id:
+
+        if node.node.metadata.get('update_id') == update_id:
             updated_node = node
             break
     assert updated_node is not None, "The search results did not return the updated document node. Either search is broken, or the document was not updated correctly."
@@ -242,7 +242,7 @@ async def test_group_content_question_positive(
     assert response_data.status == 200 and response_data.code == "SUCCESS", "Failed to update the sample question"
 
     json_payload: SearchConfig = SearchConfig(
-        prompt=updated_doc.questions[0],
+        query=updated_doc.questions[0],
         top_k=1,
         rerank_enabled=True
     )
@@ -271,7 +271,7 @@ async def test_group_content_question_positive(
     # 1) Confirms the update from before worked
     # 2) Confirms the search functionality is working
     # 3) Confirms that metadata is in fact being stored properly
-    assert update_id in top_node.text, "The search results did not return the updated question node. Either search is broken, or the question was not updated correctly."
+    assert update_id in top_node.node.text, "The search results did not return the updated question node. Either search is broken, or the question was not updated correctly."
 
     # (5) Delete the document
     response: Response = client.delete(

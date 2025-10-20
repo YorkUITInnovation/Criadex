@@ -18,7 +18,7 @@ from abc import abstractmethod
 from typing import Optional, List, Sequence, Generic, Any, Dict
 
 from typing import Optional, List, Generic, Any, Dict
-from criadex.index.schemas import ServiceConfig, BundleConfig, NodeLite
+from criadex.index.schemas import ServiceConfig, BundleConfig
 from ..database.api import GroupDatabaseAPI
 from ..database.tables.groups import GroupsModel
 from criadex.index.ragflow_objects.schemas import RagflowDocument, RagflowQuery

@@ -71,7 +71,7 @@ class APIResponse(BaseModel):
 
         data: dict = super().dict(*args, **kwargs)
 
-        if data["error"] is None:
+        if "error" in data and data["error"] is None:
             del data["error"]
 
         return data

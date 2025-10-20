@@ -6,7 +6,7 @@ Implements bot logic for semantic search, chat, and orchestration.
 from typing import Optional
 
 from criadex.core.event import Event
-from criadex.index.schemas import IndexResponse, NodeLite
+from criadex.index.schemas import IndexResponse, TextNodeWithScore, TextNode, BaseNode
 
 class Bot:
     """
@@ -40,9 +40,28 @@ class Bot:
                 src = hit.get('_source', {})
                 text = src.get('text')
                 metadata = src.get('metadata', {})
-                nodes.append(NodeLite(text=text, metadata=metadata))
+                score = hit.get('_score', 0.0)
 
-            return IndexResponse(nodes=nodes)
+                base_node = BaseNode(
+                    metadata=metadata,
+                    class_name='TextNode'
+                )
+
+                text_node = TextNode(
+                    text=text,
+                    metadata=metadata,
+                    class_name='TextNode',
+                    text_template='{}',
+                    metadata_template='{}'
+                )
+
+                node_with_score = TextNodeWithScore(
+                    node=text_node,
+                    score=score
+                )
+                nodes.append(node_with_score)
+
+            return IndexResponse(nodes=nodes, assets=[])
 
         # Fallback: return empty result
         return IndexResponse(nodes=[])

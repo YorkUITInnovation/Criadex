@@ -11,7 +11,6 @@ from elasticsearch import Elasticsearch
 from _pytest.monkeypatch import MonkeyPatch
 
 import json
-from criadex.index.schemas import NodeLite
 from .utils.test_client import CriaTestClient
 from .utils.misc_utils import assert_does_not_exist_index
 
@@ -61,26 +60,51 @@ def pytest_configure(config):
     mock_es.delete_by_query.return_value = {'deleted': 1}
     mock_es._data = {}
 
-    def mock_search_impl(index, query, size, sort):
-        hits = []
-        
-        # Extract the query_filter directly from the query
-        query_filter = query.get('function_score', {}).get('query', {}).get('bool', {}).get('filter', [{}])[0]
-        
-        expected_update_id = None
-        if 'term' in query_filter and 'metadata.update_id.keyword' in query_filter['term']:
-            expected_update_id = query_filter['term']['metadata.update_id.keyword']
+    def mock_search_impl(**kwargs):
+        index = kwargs.get('index')
+        body = kwargs.get('body')
+        size = kwargs.get('size')
+        sort = kwargs.get('sort')
 
+        all_docs = []
         for doc_id, doc_content in mock_es._data.get(index, {}).items():
-            
-            if expected_update_id:
-                if doc_content.get('metadata', {}).get('update_id') == expected_update_id:
-                    hits.append({'_source': doc_content, '_id': doc_id})
-            else: # No specific filter, return all documents (or top_k)
-                hits.append({'_source': doc_content, '_id': doc_id})
-        
-        # Apply size/top_k limit
-        hits = hits[:size]
+            all_docs.append({'_source': doc_content, '_id': doc_id})
+
+        print(f"Before sorting: {all_docs}")
+
+        # Apply sorting
+        if sort:
+            # Assuming sort is a list of dictionaries, e.g., [{"metadata.updated_at": {"order": "desc"}}]
+            # Or a dictionary like {"metadata.updated_at": {"order": "desc"}}
+            # Let's handle both cases.
+            if isinstance(sort, list) and len(sort) > 0:
+                sort_criteria = sort[0]
+            elif isinstance(sort, dict):
+                sort_criteria = sort
+            else:
+                sort_criteria = None
+
+            if sort_criteria:
+                sort_field = list(sort_criteria.keys())[0] # e.g., "metadata.updated_at"
+                sort_order = sort_criteria[sort_field]["order"] # e.g., "desc"
+
+                # Extract nested field for sorting
+                def get_sort_value(hit, field_path):
+                    parts = field_path.split('.')
+                    value = hit['_source']
+                    for part in parts:
+                        value = value.get(part)
+                        if value is None:
+                            return None # Handle missing nested fields
+                    return value
+
+                all_docs.sort(
+                    key=lambda hit: get_sort_value(hit, sort_field),
+                    reverse=(sort_order == "desc")
+                )
+        print(f"After sorting: {all_docs}")
+
+        hits = all_docs[:size] # Apply size/top_k limit after sorting
 
         return {'hits': {'hits': hits}}
 
