@@ -228,9 +228,9 @@ class Criadex:
         elif 'questions' in file_contents:
             # For QuestionConfig, create a node for each question and the answer
             for question_text in file_contents['questions']:
-                nodes_to_insert.append({'text': question_text, 'metadata': {}})
+                nodes_to_insert.append({'text': question_text, 'metadata': {}, 'type': 'NarrativeText'})
             if 'answer' in file_contents:
-                nodes_to_insert.append({'text': file_contents['answer'], 'metadata': {}})
+                nodes_to_insert.append({'text': file_contents['answer'], 'metadata': {}, 'type': 'NarrativeText'})
 
         for i, node_data in enumerate(nodes_to_insert):
             text = node_data['text']
