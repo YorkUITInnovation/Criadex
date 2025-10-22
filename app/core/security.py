@@ -26,6 +26,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from app.controllers.schemas import APIResponse, UNAUTHORIZED
+from criadex.schemas import UnauthorizedResponse
 from app.core.database.tables.auth import AuthorizationsModel
 from app.core.middleware import StatusMiddleware
 from criadex.schemas import GroupNotFoundError

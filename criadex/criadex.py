@@ -23,7 +23,7 @@ import aiomysql
 from criadex.bot.bot import Bot
 from criadex.cache.cache import Cache
 from criadex.database.api import GroupDatabaseAPI
-from criadex.schemas import MySQLCredentials, ElasticsearchCredentials, GroupConfig, GroupExistsError, IndexType, GroupNotFoundError
+from criadex.schemas import MySQLCredentials, ElasticsearchCredentials, GroupConfig, GroupExistsError, IndexType, GroupNotFoundError, DocumentExistsError, DocumentNotFoundError
 from criadex.database.tables.groups import GroupsModel
 from criadex.database.tables.documents import DocumentsModel
 from criadex.index.schemas import SearchConfig
