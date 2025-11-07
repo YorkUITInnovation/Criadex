@@ -1,7 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from criadex.agent.azure.chat import ChatAgent, ChatAgentResponse
-from criadex.index.ragflow_objects.chat import RagflowChatAgent, RagflowChatAgentResponse
 
 @pytest.fixture
 def chat_agent():

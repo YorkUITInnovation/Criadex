@@ -19,7 +19,7 @@ from fastapi import Security
 from app.core.security import get_api_key_master
 from app.core import config
 from app.core.schemas import AppMode
-from . import check, create, delete, reset
+from . import check, create, delete, reset, keys
 from ...core.route import CriaRouter
 
 router = CriaRouter(
@@ -31,7 +31,8 @@ router.include_views(
     create.view,
     delete.view,
     reset.view,
-    check.view
+    check.view,
+    keys.view
 )
 
 __all__ = ["router"]

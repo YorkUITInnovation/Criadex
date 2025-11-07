@@ -76,7 +76,8 @@ class UpdateContentRoute(CriaRoute):
                 code="SUCCESS",
                 status=200,
                 message="Successfully updated & re-indexed the content.",
-                token_usage=token_usage
+                token_usage=token_usage,
+                document_name=file.file_name
             )
         except GroupNotFoundError:
             return self.ResponseModel(

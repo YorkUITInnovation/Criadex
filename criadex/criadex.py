@@ -26,7 +26,12 @@ from criadex.database.api import GroupDatabaseAPI
 from criadex.schemas import MySQLCredentials, ElasticsearchCredentials, GroupConfig, GroupExistsError, IndexType, GroupNotFoundError, DocumentExistsError, DocumentNotFoundError
 from criadex.database.tables.groups import GroupsModel
 from criadex.database.tables.documents import DocumentsModel
+from app.core.schemas import AppMode
+from app.core import config
+from criadex.database.tables.models.cohere import COHERE_MODELS, CohereModelsBaseModel, CohereModelsModel
+from criadex.database.tables.models.azure import AZURE_MODELS, AzureModelsBaseModel, AzureModelsModel
 from criadex.index.schemas import SearchConfig
+from criadex.schemas import ModelExistsError
 from criadex.core.event import Event
 from criadex.index.ragflow_objects.vector_store import RagflowVectorStore
 from criadex.index.ragflow_objects.embedder import RagflowEmbedder
@@ -74,6 +79,26 @@ class Criadex:
         self.mysql_api = GroupDatabaseAPI(self.mysql_pool)
         await self.mysql_api.initialize()
 
+        # Populate default models if empty and not in testing mode
+        if config.APP_MODE != AppMode.TESTING:
+            await self.mysql_api.cohere_models.truncate()
+            for model_name in COHERE_MODELS.__args__:
+                await self.mysql_api.cohere_models.insert(
+                    CohereModelsBaseModel(
+                        api_model=model_name,
+                        api_key=""
+                    )
+                )
+            await self.mysql_api.azure_models.truncate()
+            for model_name in AZURE_MODELS.__args__:
+                await self.mysql_api.azure_models.insert(
+                    AzureModelsBaseModel(
+                        api_model=model_name,
+                        api_resource=f"your-resource-{model_name}",
+                        api_deployment=f"your-deployment-{model_name}"
+                    )
+                )
+
 
         # Ragflow/Elasticsearch integration
         self.vector_store = RagflowVectorStore(
@@ -90,9 +115,9 @@ class Criadex:
         self.bot = Bot(self.vector_store, self.embedder, event=self.event)
         self.cache = Cache(self.mysql_api, event=self.event)
         # Example: emit event hooks for search/insert/delete
-        self.event.on(Event.SEARCH, lambda query: logging.info(f"Search event: {query}"))
-        self.event.on(Event.INSERT, lambda doc: logging.info(f"Insert event: {doc}"))
-        self.event.on(Event.DELETE, lambda doc_id: logging.info(f"Delete event: {doc_id}"))
+        # self.event.on(Event.SEARCH, lambda query: logging.info(f"Search event: {query}"))
+        # self.event.on(Event.INSERT, lambda doc: logging.info(f"Insert event: {doc}"))
+        # self.event.on(Event.DELETE, lambda doc_id: logging.info(f"Delete event: {doc_id}"))
 
     async def exists(self, name: str) -> bool:
         """
@@ -260,12 +285,10 @@ class Criadex:
         return total_tokens
 
     async def delete_file(self, group_name: str, document_name: str) -> None:
-        import logging
         group_id: int = await self.get_id(name=group_name)
         if not await self.mysql_api.documents.exists(group_id=group_id, document_name=document_name):
             raise DocumentNotFoundError()
         document: DocumentsModel = await self.mysql_api.documents.retrieve(group_id=group_id, document_name=document_name)
-        logging.info(f"Deleting all nodes for file: {document_name} in group: {group_name}")
 
         await self.vector_store.adelete_by_query(
             collection_name=group_name,
@@ -318,6 +341,9 @@ class Criadex:
 
     # Example methods to show event usage (replace with your actual logic)
     async def search(self, group_name: str, query: SearchConfig, top_k=10, query_filter: Optional[dict] = None):
+        if not await self.exists(name=group_name):
+            raise GroupNotFoundError()
+
         # Use bot for semantic search and cache results
         self.event.emit(Event.SEARCH, query=query)
         
@@ -335,3 +361,129 @@ class Criadex:
         self.cache.set(cache_key, results)
         
         return results
+
+    async def insert_azure_model(self, config: AzureModelsBaseModel) -> AzureModelsModel:
+        """
+        Insert an Azure model config into the database.
+        
+        :param config: The Azure model configuration
+        :return: The created AzureModelsModel with ID
+        :raises ModelExistsError: If a model with the same api_resource and api_deployment already exists
+        """
+        # Check for duplicate based on composite unique constraint (api_resource, api_deployment)
+        existing_id = await self.mysql_api.azure_models.get_model_id(
+            api_deployment=config.api_deployment,
+            api_resource=config.api_resource
+        )
+        if existing_id is not None:
+            raise ModelExistsError(
+                f"That deployment '{config.api_deployment}' already exists in the database for Azure resource '{config.api_resource}'!"
+            )
+        
+        return await self.mysql_api.azure_models.insert(config=config)
+
+    async def insert_cohere_model(self, config: CohereModelsBaseModel) -> CohereModelsModel:
+        """
+        Insert a Cohere model config into the database.
+        
+        :param config: The Cohere model configuration
+        :return: The created CohereModelsModel with ID
+        :raises ModelExistsError: If a model with the same api_key and api_model already exists
+        """
+        # Check for duplicate - need to check if model exists for this API key
+        # This depends on the CohereModels table structure, but typically it's (api_key, api_model) unique
+        # For now, we'll catch the database error if it exists, or check if we have a similar get_model_id method
+        try:
+            return await self.mysql_api.cohere_models.insert(config=config)
+        except Exception as e:
+            # If it's a duplicate key error, raise ModelExistsError
+            if "Duplicate" in str(e) or "1062" in str(e):
+                raise ModelExistsError(
+                    f"That model already exists for that Cohere API key!"
+                )
+            raise
+
+    async def exists_azure_model(self, model_id: int) -> bool:
+        """
+        Check if an Azure model exists by ID.
+        
+        :param model_id: The model ID
+        :return: Whether the model exists
+        """
+        return await self.mysql_api.azure_models.exists(model_id=model_id)
+
+    async def about_azure_model(self, model_id: int) -> AzureModelsModel:
+        """
+        Retrieve an Azure model by ID or raise if not found.
+        """
+        model = await self.mysql_api.azure_models.retrieve(model_id=model_id)
+        if model is None:
+            from criadex.schemas import ModelNotFoundError
+            raise ModelNotFoundError()
+        return model
+
+    async def delete_azure_model(self, model_id: int) -> None:
+        """
+        Delete an Azure model by ID. Raise ModelNotFoundError if missing and
+        ModelInUseError if referenced by any group.
+        """
+        from criadex.schemas import ModelNotFoundError, ModelInUseError
+        if not await self.mysql_api.azure_models.exists(model_id=model_id):
+            raise ModelNotFoundError()
+        if await self.mysql_api.azure_models.in_use(model_id=model_id):
+            raise ModelInUseError()
+        await self.mysql_api.azure_models.delete(model_id=model_id)
+
+    async def update_azure_model(self, config: AzureModelsModel) -> AzureModelsModel:
+        """
+        Update an existing Azure model; ensure composite (api_resource, api_deployment) remains unique.
+        """
+        # If api_resource/api_deployment changed to an existing pair, block
+        existing_id = await self.mysql_api.azure_models.get_model_id(
+            api_deployment=config.api_deployment,
+            api_resource=config.api_resource
+        )
+        if existing_id is not None and existing_id != config.id:
+            raise ModelExistsError(
+                f"That deployment '{config.api_deployment}' already exists in the database for Azure resource '{config.api_resource}'!"
+            )
+        return await self.mysql_api.azure_models.update(config=config)
+
+    async def about_cohere_model(self, model_id: int) -> CohereModelsModel:
+        """
+        Retrieve a Cohere model by ID or raise if not found.
+        """
+        model = await self.mysql_api.cohere_models.retrieve(model_id=model_id)
+        if model is None:
+            from criadex.schemas import ModelNotFoundError
+            raise ModelNotFoundError()
+        return model
+
+    async def update_cohere_model(self, config: CohereModelsModel) -> CohereModelsModel:
+        """
+        Update an existing Cohere model; ensure (api_key, api_model) remains unique if relevant.
+        """
+        # If api_key/api_model pair conflicts with another, block
+        existing_id = await self.mysql_api.cohere_models.get_model_id(
+            api_key=config.api_key,
+            api_model=config.api_model
+        )
+        if existing_id is not None and existing_id != config.id:
+            raise ModelExistsError(
+                "That model already exists for that Cohere API key!"
+            )
+        await self.mysql_api.cohere_models.update(config=config)
+        # Return the fresh model
+        return await self.about_cohere_model(model_id=config.id)
+
+    async def delete_cohere_model(self, model_id: int) -> None:
+        """
+        Delete a Cohere model by ID. Raise ModelNotFoundError if missing and
+        ModelInUseError if referenced by any group.
+        """
+        from criadex.schemas import ModelNotFoundError, ModelInUseError
+        if not await self.mysql_api.cohere_models.exists(model_id=model_id):
+            raise ModelNotFoundError()
+        if await self.mysql_api.cohere_models.in_use(model_id=model_id):
+            raise ModelInUseError()
+        await self.mysql_api.cohere_models.delete(model_id=model_id)

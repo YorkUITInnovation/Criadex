@@ -100,8 +100,9 @@ class ChatAgentRoute(CriaRoute):
             code="SUCCESS",
             status=200,
             message="Successfully queried the Ragflow model!",
-            agent_response=await agent.execute(
-                history=config.history
+            agent_response=await agent.chat(
+                model_id=model_id,
+                query=config.history[-1].blocks[0].text # Assuming the last message is the user's prompt
             )
         )
 

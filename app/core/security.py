@@ -86,6 +86,41 @@ async def get_api_key_master(
 
     """
 
+    # Special-case: Allow /auth/{api_key}/check to proceed using the path param.
+    # This endpoint validates an API key and should not require an additional header/query key.
+    path: str = request.url.path or ""
+    if path.startswith("/auth/") and path.endswith("/check"):
+        try:
+            return request.path_params.get("api_key")
+        except Exception:
+            pass
+
+    # Special-case: Allow /group_auth/{group_name}/check to proceed using the api_key query param.
+    # This endpoint allows any API key to check its own authorization without requiring a master key.
+    if path.startswith("/group_auth/") and path.endswith("/check"):
+        api_key_from_query = request.query_params.get("api_key")
+        if api_key_from_query:
+            # Validate that the API key exists (but don't require it to be master)
+            auth_model = await request.app.auth.authorizations.retrieve(key=api_key_from_query)
+            if auth_model is not None:
+                # Return the API key to allow the endpoint to proceed
+                return api_key_from_query
+
+    # Special-case: Allow /group_auth/list to proceed using the api_key query param or header.
+    # This endpoint allows any API key to list its own groups without requiring a master key.
+    if path == "/group_auth/list":
+        # Check query param first, then header (for flexibility)
+        api_key_from_query = request.query_params.get("api_key")
+        api_key_from_header = handle_none_str(_api_key_header) or handle_none_str(_api_key_query)
+        api_key_to_check = api_key_from_query or api_key_from_header
+        
+        if api_key_to_check:
+            # Validate that the API key exists (but don't require it to be master)
+            auth_model = await request.app.auth.authorizations.retrieve(key=api_key_to_check)
+            if auth_model is not None:
+                # Return the API key to allow the endpoint to proceed
+                return api_key_to_check
+
     api_key: str = handle_none_str(_api_key_header) or handle_none_str(_api_key_query)
     if api_key is None:
         raise BadAPIKeyException(status_code=401, detail="No API key was sent.")
@@ -163,6 +198,10 @@ async def get_api_key_group(
     """
 
     api_key: str = handle_none_str(_api_key_header) or handle_none_str(_api_key_query)
+    # Allow using the explicit 'api_key' query param for the group check endpoint
+    path: str = request.url.path or ""
+    if (api_key is None) and path.startswith("/group_auth/") and path.endswith("/check"):
+        api_key = request.query_params.get("api_key")
 
     try:
         group_names: List[str] = [request.path_params['group_name']]

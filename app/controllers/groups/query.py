@@ -44,11 +44,17 @@ class QueryGroupRoute(CriaRoute):
             return self.ResponseModel(
                 code="GROUP_NOT_FOUND",
                 status=404,
-                message=f"The requested group '{group_name}' was not found!"
+                message=f"The requested group '{group_name}' was not found!",
+                nodes=[],
+                assets=[],
+                search_units=0
             )
         except Exception as e:
             return self.ResponseModel(
                 code="ERROR",
                 status=500,
-                message=f"An internal error occurred: {str(e)}"
+                message=f"An internal error occurred: {str(e)}",
+                nodes=[],
+                assets=[],
+                search_units=0
             )

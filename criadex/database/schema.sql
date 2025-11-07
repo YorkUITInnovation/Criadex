@@ -29,7 +29,6 @@ CREATE TABLE IF NOT EXISTS `Groups`
     `llm_model_id`       INT          NOT NULL,
     `embedding_model_id` INT          NOT NULL,
     `rerank_model_id`    INT          NOT NULL,
-    UNIQUE (`name`),
     FOREIGN KEY (llm_model_id) REFERENCES AzureModels (id),
     FOREIGN KEY (embedding_model_id) REFERENCES AzureModels (id),
     FOREIGN KEY (rerank_model_id) REFERENCES CohereModels (id)

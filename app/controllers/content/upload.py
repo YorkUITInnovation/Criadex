@@ -34,6 +34,7 @@ view = APIRouter()
 class ContentUploadResponse(APIResponse):
     code: Union[SUCCESS, GROUP_NOT_FOUND, INVALID_FILE_DATA, DUPLICATE, ERROR]
     token_usage: Optional[int] = None
+    document_name: Optional[str] = None
 
 
 @cbv(view)
@@ -76,7 +77,8 @@ class UploadContentRoute(CriaRoute):
                 code="SUCCESS",
                 status=200,
                 message="Successfully uploaded & indexed the content.",
-                token_usage=token_usage
+                token_usage=token_usage,
+                document_name=file.file_name
             )
         except GroupNotFoundError:
             return self.ResponseModel(

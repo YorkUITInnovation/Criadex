@@ -21,7 +21,7 @@ from functools import wraps
 from typing import Optional, Type, Literal, TypeVar, Callable, Awaitable
 
 from pydantic import BaseModel, Field
-from criadex.schemas import APIResponse, APIResponseModel, UNAUTHORIZED, TIMEOUT, ERROR, SUCCESS, NOT_FOUND, RATE_LIMIT, DUPLICATE, INVALID_INDEX_TYPE, GROUP_NOT_FOUND, FILE_NOT_FOUND, INVALID_FILE_DATA, MODEL_IN_USE, INVALID_MODEL, INVALID_REQUEST, OPENAI_FILTER, RateLimitResponse, GroupExistsResponse
+from criadex.schemas import APIResponse, APIResponseModel, UNAUTHORIZED, TIMEOUT, ERROR, SUCCESS, NOT_FOUND, RATE_LIMIT, DUPLICATE, INVALID_INDEX_TYPE, GROUP_NOT_FOUND, FILE_NOT_FOUND, INVALID_FILE_DATA, MODEL_IN_USE, INVALID_MODEL, INVALID_REQUEST, OPENAI_FILTER, RateLimitResponse, GroupExistsResponse, MODEL_NOT_FOUND
 
 
 def catch_exceptions(

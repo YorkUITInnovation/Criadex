@@ -189,3 +189,34 @@ async def test_groups_negative_duplicate(
 
     # cleanup
     client.delete(f"/groups/{test_group}/delete", headers=sample_master_headers)
+
+
+@pytest.mark.asyncio
+async def test_groups_query_negative(
+    client: CriaTestClient,
+    sample_master_headers: dict
+) -> None:
+    """
+    Test the /groups/{group_name}/query route for negative scenarios.
+    """
+    non_existent_group: str = "pytest-non-existent-" + str(uuid.uuid4())
+
+    # (1) Perform a query on a non-existent group
+    query_payload = {
+        "query": "What is the capital of France?",
+        "top_k": 5
+    }
+    response: Response = client.post(
+        f"/groups/{non_existent_group}/query",
+        headers=sample_master_headers,
+        json=query_payload
+    )
+
+    response_data: GroupQueryResponse = assert_response_shape(response.json(), custom_shape=GroupQueryResponse, require_status=None, require_code=None)
+
+    # Run checks on the response
+    assert response_data.status == 404
+    assert response_data.code == "GROUP_NOT_FOUND"
+    assert response_data.nodes == []
+    assert response_data.assets == []
+    assert response_data.search_units == 0

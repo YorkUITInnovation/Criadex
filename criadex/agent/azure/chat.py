@@ -15,15 +15,14 @@ You should have received a copy of the GNU General Public License along with Cri
 """
 
 from typing import List, Optional, Any
+from criadex.index.ragflow_objects.chat import RagflowChatAgent
 
-from criadex.index.ragflow_objects.chat import RagflowChatAgent, RagflowChatAgentResponse
-
-
-class ChatAgentResponse(RagflowChatAgentResponse):
+class ChatAgentResponse:
     def __init__(self, chat_response: Any, usage: dict, message: str, model_id: Optional[int] = None):
-        super().__init__(message=message, model_id=model_id)
         self.chat_response = chat_response
         self.usage = usage
+        self.message = message
+        self.model_id = model_id
 
 
 class ChatAgent(RagflowChatAgent):

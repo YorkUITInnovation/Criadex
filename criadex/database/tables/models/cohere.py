@@ -100,7 +100,7 @@ class CohereModels(Table):
                 )
             )
 
-            return CohereModelsModel(**config.dict(), **{"id": cursor.lastrowid})
+            return CohereModelsModel(**config.model_dump(), **{"id": cursor.lastrowid})
 
     async def delete(self, model_id: int) -> None:
         """
@@ -190,3 +190,35 @@ class CohereModels(Table):
 
             result: Optional[tuple] = await cursor.fetchone()
             return result[0] if result else None
+
+    async def get_all(self) -> list['CohereModelsModel']:
+        """
+        Retrieve all Cohere Model configs from the database
+
+        :return: A list of model configs
+
+        """
+
+        async with self.cursor() as cursor:
+            await cursor.execute(
+                f"SELECT {CohereModelsModel.to_query_str()} "
+                "FROM CohereModels"
+            )
+
+            return [
+                CohereModelsModel.from_results(row)
+                for row in await cursor.fetchall()
+            ]
+
+    async def truncate(self) -> None:
+        """
+        Truncate the CohereModels table
+
+        :return: None
+
+        """
+
+        async with self.cursor() as cursor:
+            await cursor.execute("SET FOREIGN_KEY_CHECKS=0;")
+            await cursor.execute("TRUNCATE TABLE CohereModels")
+            await cursor.execute("SET FOREIGN_KEY_CHECKS=1;")

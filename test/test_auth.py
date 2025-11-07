@@ -7,6 +7,7 @@ from app.controllers.auth.check import AuthCheckResponse
 from app.controllers.auth.create import AuthCreateResponse
 from app.controllers.auth.delete import AuthDeleteResponse
 from app.controllers.auth.reset import AuthResetResponse
+from app.controllers.auth.keys import AuthKeysResponse
 from .utils.test_client import CriaTestClient, assert_response_shape
 
 
@@ -64,3 +65,35 @@ async def test_auth_positive(
 
     # Run checks on the response
     assert response.api_key == test_key_2
+
+
+@pytest.mark.asyncio
+async def test_auth_keys_endpoint_positive(
+        client: CriaTestClient,
+        sample_master_headers: dict
+) -> None:
+    """
+    Test the /auth/keys/{api_key} endpoint for a positive scenario.
+    """
+    create_payload = {"master": False}
+    test_key: str = "test-keys-endpoint-" + str(uuid.uuid4())
+
+    # (1) Create the key
+    json_response: Response = client.post(f"/auth/{test_key}/create", json=create_payload, headers=sample_master_headers)
+    response: AuthCreateResponse = assert_response_shape(json_response.json(), require_status=200, require_code="SUCCESS", custom_shape=AuthCreateResponse)
+    assert response.api_key == test_key
+    assert response.master is False
+
+    # (2) Check the key using the new /auth/keys/{api_key} endpoint
+    json_response: Response = client.get(f"/auth/keys/{test_key}", headers=sample_master_headers)
+    response: AuthKeysResponse = assert_response_shape(json_response.json(), require_status=200, require_code="SUCCESS", custom_shape=AuthKeysResponse)
+
+    # Run checks on the response
+    assert response.api_key == test_key
+    assert response.authorized is True
+    assert response.master is False
+
+    # (3) Delete the key
+    json_response: Response = client.delete(f"/auth/{test_key}/delete", headers=sample_master_headers)
+    response: AuthDeleteResponse = assert_response_shape(json_response.json(), require_status=200, require_code="SUCCESS", custom_shape=AuthDeleteResponse)
+    assert response.api_key == test_key

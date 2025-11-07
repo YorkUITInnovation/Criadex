@@ -44,6 +44,7 @@ class ListGroupAuthRoute(CriaRoute):
         name="List authorized indexes",
         summary="List the index groups a user is authorized on",
         description="List the index groups a user is authorized on",
+        dependencies=[],  # Override router-level master key dependency - this endpoint allows self-service
     )
     @catch_exceptions(
         ResponseModel
@@ -51,8 +52,19 @@ class ListGroupAuthRoute(CriaRoute):
     async def execute(
         self,
         request: Request,
-        api_key: str
+        api_key: Optional[str] = None
     ) -> ResponseModel:
+        # Get API key from query param or header
+        if api_key is None:
+            api_key = request.query_params.get("api_key") or request.headers.get("x-api-key")
+        
+        if api_key is None:
+            return self.ResponseModel(
+                status=401,
+                code="ERROR",
+                message="API key must be provided either as a query parameter or in the x-api-key header"
+            )
+        
         # Get their auth model
         database: AuthDatabaseAPI = request.app.auth
         auth_model: Optional[AuthorizationsModel] = await database.authorizations.retrieve(api_key)

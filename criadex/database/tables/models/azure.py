@@ -56,6 +56,8 @@ class AzureModelsBaseModel(AzureModelsPartialBaseModel):
     """
 
     api_model: AZURE_MODELS = "text-embedding-ada-002"
+    api_resource: str = "your-resource"
+    api_deployment: str = "your-deployment-name"
 
 
 class AzureModelsModel(AzureModelsBaseModel):
@@ -148,7 +150,7 @@ class AzureModels(Table):
                 )
             )
 
-            return AzureModelsModel(**config.dict(), **{"id": cursor.lastrowid})
+            return AzureModelsModel(**config.model_dump(), **{"id": cursor.lastrowid})
 
     async def delete(self, model_id: int) -> None:
         """
@@ -239,5 +241,35 @@ class AzureModels(Table):
             result: Optional[tuple] = await cursor.fetchone()
             return result[0] if result else None
 
+    async def get_all(self) -> list['AzureModelsModel']:
+        """
+        Retrieve all Azure Model configs from the database
 
+        :return: A list of model configs
+
+        """
+
+        async with self.cursor() as cursor:
+            await cursor.execute(
+                f"SELECT {AzureModelsModel.to_query_str()} "
+                "FROM AzureModels"
+            )
+
+            return [
+                AzureModelsModel.from_results(row)
+                for row in await cursor.fetchall()
+            ]
+
+    async def truncate(self) -> None:
+        """
+        Truncate the AzureModels table
+
+        :return: None
+
+        """
+
+        async with self.cursor() as cursor:
+            await cursor.execute("SET FOREIGN_KEY_CHECKS=0;")
+            await cursor.execute("TRUNCATE TABLE AzureModels")
+            await cursor.execute("SET FOREIGN_KEY_CHECKS=1;")
 

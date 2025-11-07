@@ -72,12 +72,10 @@ class RagflowVectorStore:
         await loop.run_in_executor(None, self.create_collection, collection_name)
 
     def insert(self, collection_name, doc_id, embedding, text, metadata=None):
-        import logging
         body = {"text": text, "embedding": embedding}
         if metadata:
             body["metadata"] = metadata
         body["collection_name"] = collection_name # Add collection_name to the document
-        logging.info(f"Elasticsearch insert: doc_id={doc_id}, metadata={body.get('metadata')}")
         
         self.es.index(index=collection_name, id=doc_id, document=body, refresh=True)
 
@@ -178,7 +176,8 @@ class RagflowVectorStore:
             "index": collection_name, # Use collection_name as the index
             "query": main_query,
             "size": top_k,
-            "sort": [{"metadata.updated_at": {"order": "desc"}}]
+            "sort": [{"metadata.updated_at": {"order": "desc"}}],
+            "track_scores": True
         }
         
         result = self.es.search(**search_kwargs)

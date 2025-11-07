@@ -39,6 +39,8 @@ import warnings
 from typing import List, Optional, Any
 from contextlib import asynccontextmanager
 
+logging.basicConfig(level=logging.WARNING)
+
 class CriadexAPI(FastAPI):
     """
     FastAPI server

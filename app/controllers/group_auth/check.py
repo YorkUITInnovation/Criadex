@@ -44,6 +44,7 @@ class CheckGroupAuthRoute(CriaRoute):
         name="Check index authorization",
         summary="Check if an authorization is authorized on an index group",
         description="Check if a given authorization is authorized to access an index group",
+        dependencies=[],
     )
     @catch_exceptions(
         ResponseModel

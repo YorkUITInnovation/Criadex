@@ -44,8 +44,10 @@ def _unmonkeypatch_aiomysql_connect():
 #   Pytest Elasticsearch Mock
 # ───────────────────────────────
 def pytest_configure(config):
-    print("PYTEST_CONFIGURE: Called")
+    
     """Configure session-scoped mocks and monkeypatches."""
+    os.environ["MYSQL_DATABASE"] = "criadex_test"
+
     mock_es = MagicMock(spec=Elasticsearch)
     mock_es.indices = MagicMock()
     mock_es.indices.exists.return_value = True
@@ -70,7 +72,7 @@ def pytest_configure(config):
         for doc_id, doc_content in mock_es._data.get(index, {}).items():
             all_docs.append({'_source': doc_content, '_id': doc_id})
 
-        print(f"Before sorting: {all_docs}")
+        
 
         # Apply sorting
         if sort:
@@ -102,7 +104,7 @@ def pytest_configure(config):
                     key=lambda hit: get_sort_value(hit, sort_field),
                     reverse=(sort_order == "desc")
                 )
-        print(f"After sorting: {all_docs}")
+        
 
         hits = all_docs[:size] # Apply size/top_k limit after sorting
 
@@ -116,16 +118,16 @@ def pytest_configure(config):
         "criadex.index.ragflow_objects.vector_store.RagflowVectorStore.__init__",
         lambda self, *_, **__: setattr(self, 'es', mock_es)
     )
-    print(f"PYTEST_CONFIGURE: mock_es._data initialized: {mock_es._data}")
+    
     _monkeypatch_aiomysql_connect() # Monkeypatch aiomysql.connect here
 
 
 def pytest_unconfigure(config):
-    print("PYTEST_UNCONFIGURE: Called")
+    
     """Undo monkeypatching at the end of the session."""
     config._monkeypatch_session.undo()
     _unmonkeypatch_aiomysql_connect() # Unmonkeypatch aiomysql.connect here
-    print(f"PYTEST_UNCONFIGURE: mock_es._data at unconfigure: {config._mock_elasticsearch_client._data}")
+    
 
 
 @pytest.fixture(scope="session")
@@ -155,7 +157,7 @@ def event_loop():
     # Add a small delay before closing the loop
     try:
         # Close all tracked aiomysql connections
-        print("EVENT_LOOP_TEARDOWN: Closing active aiomysql connections...")
+        
         for conn in _active_aiomysql_connections:
             if not conn.closed:
                 loop.run_until_complete(conn.close())
@@ -164,7 +166,7 @@ def event_loop():
         # Also try to force garbage collection, though not guaranteed to work
         import gc
         gc.collect()
-        print("EVENT_LOOP_TEARDOWN: Active aiomysql connections closed.")
+        
 
         _cancel_all_tasks(loop)
         loop.run_until_complete(loop.shutdown_asyncgens())
@@ -278,7 +280,7 @@ async def setup_database():
     from app.core import config
 
     host = os.environ.get('MYSQL_HOST', '127.0.0.1')
-    db_name = 'criadex_test' if os.environ.get('APP_API_MODE', 'TESTING') == 'TESTING' else os.environ.get('MYSQL_DATABASE', 'criadex')
+    db_name = 'criadex_test'
 
     conn = await aiomysql.connect(
         host=host,
@@ -286,17 +288,49 @@ async def setup_database():
         user=config.MYSQL_CREDENTIALS.username,
         password=config.MYSQL_CREDENTIALS.password,
     )
-    _active_aiomysql_connections.append(conn) # Track the connection
+    _active_aiomysql_connections.append(conn)
 
     async with conn.cursor() as cursor:
         await cursor.execute(f"DROP DATABASE IF EXISTS {db_name}")
         await cursor.execute(f"CREATE DATABASE {db_name}")
+        await cursor.execute(f"USE {db_name}")
+
+        with open("criadex/database/schema.sql") as f:
+            schema = f.read()
+            for statement in schema.split(";"):
+                if statement.strip():
+                    await cursor.execute(statement)
+
+        with open("app/core/database/schema.sql") as f:
+            schema = f.read()
+            for statement in schema.split(";"):
+                if statement.strip():
+                    await cursor.execute(statement)
+
     yield
     # Connection will be closed by the event_loop fixture's cleanup
 
 
 @pytest_asyncio.fixture(scope="session")
-async def criadex_app(request): # Add request to access config
+async def db_connection(setup_database):
+    import aiomysql
+    from app.core import config
+
+    host = os.environ.get('MYSQL_HOST', '127.0.0.1')
+    db_name = 'criadex_test' if os.environ.get('APP_API_MODE', 'TESTING') == 'TESTING' else os.environ.get('MYSQL_DATABASE', 'criadex')
+
+    conn = await aiomysql.connect(
+        host=host,
+        port=config.MYSQL_CREDENTIALS.port,
+        user=config.MYSQL_CREDENTIALS.username,
+        password=config.MYSQL_CREDENTIALS.password,
+        db=db_name
+    )
+    _active_aiomysql_connections.append(conn)
+    yield conn
+
+@pytest_asyncio.fixture(scope="session")
+async def criadex_app(request, populate_models): # Add request to access config
     """Create and initialize the CriadexAPI app."""
     from app.core.app import CriadexAPI
     app = CriadexAPI.create()
@@ -311,39 +345,25 @@ async def criadex_app(request): # Add request to access config
 
 
 @pytest_asyncio.fixture(scope="session")
-async def populate_models(setup_database, criadex_app): # Add criadex_app as a dependency
+async def populate_models(db_connection): # Add criadex_app as a dependency
     """Populate dummy model data for tests."""
-    import aiomysql
-    from app.core import config
-
-    host = os.environ.get('MYSQL_HOST', '127.0.0.1')
-    db_name = 'criadex_test' if os.environ.get('APP_API_MODE', 'TESTING') == 'TESTING' else os.environ.get('MYSQL_DATABASE', 'criadex')
-
-    conn = await aiomysql.connect(
-        host=host,
-        port=config.MYSQL_CREDENTIALS.port,
-        user=config.MYSQL_CREDENTIALS.username,
-        password=config.MYSQL_CREDENTIALS.password,
-        db=db_name
-    )
-    _active_aiomysql_connections.append(conn) # Track the connection
-
-    async with conn.cursor() as cursor:
+    async with db_connection.cursor() as cursor:
         await cursor.execute("""
             INSERT INTO AzureModels (id, api_resource, api_version, api_key, api_deployment, api_model)
             VALUES
             (1, 'test-resource', '2023-05-15', 'test-key', 'test-deployment', 'gpt-4'),
             (2, 'test-resource-2', '2023-05-15', 'test-key-2', 'test-deployment-2', 'text-embedding-ada-002')
+            ON DUPLICATE KEY UPDATE id=id;
         """)
         await cursor.execute("""
             INSERT INTO CohereModels (id, api_key, api_model)
             VALUES
             (1, 'test-cohere-key', 'rerank-english-v2.0'),
             (3, 'test-cohere-key-3', 'rerank-english-v2.0')
+            ON DUPLICATE KEY UPDATE id=id;
         """)
-        await conn.commit()
+        await db_connection.commit()
     yield
-    # Connection will be closed by the event_loop fixture's cleanup
 
 
 # ───────────────────────────────
