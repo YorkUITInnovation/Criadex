@@ -20,7 +20,7 @@ from enum import Enum
 from slowapi import Limiter
 
 """Create a rate limiter for the index group search function to prevent abuse"""
-index_search_limiter: Limiter = Limiter(key_func=lambda request: request.path_params.get('index_name'))
+index_search_limiter: Limiter = Limiter(key_func=lambda request: request.path_params.get('group_name'))
 
 """Create a rate limiter for the model use function to prevent abuse"""
 model_query_limiter: Limiter = Limiter(key_func=lambda request: request.path_params.get('model_id'))
