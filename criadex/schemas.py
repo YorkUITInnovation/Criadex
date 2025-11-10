@@ -14,7 +14,7 @@ You should have received a copy of the GNU General Public License along with Cri
 
 """
 from enum import Enum
-from typing import Optional, Type, Literal, cast, TypeVar, Callable, Awaitable
+from typing import Optional, Type, Literal, cast, TypeVar, Callable, Awaitable, List
 import time
 import logging
 import traceback
@@ -232,4 +232,33 @@ class EmptyPromptError(RuntimeError):
     Thrown if the prompt is empty.
 
     """
+
+
+class CompletionUsage(BaseModel):
+    completion_tokens: int
+    prompt_tokens: int
+    total_tokens: int
+    usage_label: Optional[str] = None
+
+
+class RelatedPrompt(BaseModel):
+    label: str
+    prompt: str
+    llm_generated: bool = False
+
+
+class BaseAgentResponse(BaseModel):
+    message: Optional[str] = None
+
+
+class LLMAgentResponse(BaseAgentResponse):
+    usage: List[CompletionUsage]
+
+
+class RelatedPromptsAgentResponse(LLMAgentResponse):
+    related_prompts: List[RelatedPrompt]
+
+
+class AgentRelatedPromptsResponse(BaseModel):
+    agent_response: Optional[RelatedPromptsAgentResponse]
 
