@@ -13,74 +13,25 @@ You should have received a copy of the GNU General Public License along with Cri
 @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
 
 """
+from typing import List, Optional, Any
+from pydantic import BaseModel
+from lingua import LanguageDetectorBuilder
 
-import enum
-from typing import List, Optional
+class LanguageAgentResponse(BaseModel):
+    language: Optional[str]
+    confidence: float
 
-from lingua import LanguageDetectorBuilder, LanguageDetector, IsoCode639_1, Language
-from ..base_agent import BaseAgent, BaseAgentResponse
+class LanguageAgent:
+    def __init__(self):
+        self.detector = LanguageDetectorBuilder.from_all_languages().with_preloaded_language_models().build()
 
-
-class LanguageAgentLanguage(str, enum.Enum):
-    """
-    Supported list of languages for the language agent
-
-    """
-
-    ENGLISH = "EN"
-    FRENCH = "FR"
-
-    @classmethod
-    def list(cls) -> List[str]:
-        """
-        List the languages as strings
-        :return: The list of languages
-
-        """
-
-        return list(map(lambda c: c.value, cls))
-
-
-class LanguageAgentResponse(BaseAgentResponse):
-    """
-    The response of the language agent
-
-    """
-
-    language: Optional[LanguageAgentLanguage]
-
-
-class LanguageAgent(BaseAgent):
-    """
-    Determine the language of the query. Currently, this is restricted to only French and english.
-
-    """
-
-    SUPPORTED_LANGS: List[IsoCode639_1] = [getattr(IsoCode639_1, L) for L in LanguageAgentLanguage.list()]
-    LANG_DETECTOR: LanguageDetector = LanguageDetectorBuilder.from_iso_codes_639_1(*SUPPORTED_LANGS).build()
-
-    def execute(self, prompt: str) -> LanguageAgentResponse:
-        """
-        Execute the language detection agent
-
-        :param prompt: The prompt to detect the language of
-        :return: The language of the prompt
-
-        """
-
-        language: Optional[Language] = self.LANG_DETECTOR.detect_language_of(
-            text=prompt
-        )
-
-        # Success
-        if language is not None:
-            return LanguageAgentResponse(
-                message="Successfully ran detection inference!",
-                language=language.iso_code_639_1.name
-            )
-
-        # Not one of the two
+    def detect(self, text: str) -> LanguageAgentResponse:
+        confidence_values = self.detector.compute_language_confidence_values(text)
+        if not confidence_values:
+            return LanguageAgentResponse(language=None, confidence=0.0)
+        
+        most_likely_language = confidence_values[0]
         return LanguageAgentResponse(
-            message=f"Language is none of: {', '.join(LanguageAgentLanguage.list())}",
-            language=None
+            language=most_likely_language.language.iso_code_639_1.name,
+            confidence=most_likely_language.value
         )

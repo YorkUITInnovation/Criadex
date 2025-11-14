@@ -13,113 +13,14 @@ You should have received a copy of the GNU General Public License along with Cri
 @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
 
 """
-
-import textwrap
-from typing import List, Optional
-
-from criadex.index.ragflow_objects.transform import RagflowTransformAgent, RagflowTransformAgentResponse
-from criadex.index.ragflow_objects.schemas import RagflowChatMessage, RagflowChatResponse
 from pydantic import BaseModel
-from llama_index.core import PromptTemplate
 
-from ..azure_agent import LLMAgentResponse
+class TransformAgentResponse(BaseModel):
+    transformed_text: str
 
-
-class TransformAgentResponse(LLMAgentResponse):
-    new_prompt: Optional[str] = None
-
-
-class TransformAgentConfig(BaseModel):
-    prompt: str
-    history: List[RagflowChatMessage]
-
-
-CHAT_MESSAGE_PROMPT: PromptTemplate = PromptTemplate(
-    "{role}: {content}"
-)
-
-USER_MESSAGE_PROMPT: PromptTemplate = PromptTemplate(
-    textwrap.dedent("""
-        {chat_history}
-
-        Prompt:
-        {prompt}
-        
-        Your Reply:
-
-    """)
-)
-
-QUERY_AGENT_PROMPT: PromptTemplate = PromptTemplate(
-    textwrap.dedent("""
-    [INSTRUCTIONS]
-    You are a tool to transform user prompts.
-    A conversation history is provided below, along with a user's new prompt. Using the history, reply with a new prompt
-    from the perspective of THE USER and include any contextual information from the history IF it is needed for the prompt 
-    to make sense on its own. Do NOT add any extra information. Most recent messages will have the most relevant context.
-    
-    Here's an example:
-    
-    user: I love to cook.
-    assistant: Amazing!
-    
-    Query: 
-    What should I?
-    
-    Your Reply:
-    What should I cook?
-
-    Let's try this now:
-    """)
-)
-
-
-class TransformAgent(RagflowTransformAgent):
-
-    async def execute(
-            self,
-            config: TransformAgentConfig
-    ) -> TransformAgentResponse:
-        agent_prompt: str = QUERY_AGENT_PROMPT.format()
-        user_prompt: str = USER_MESSAGE_PROMPT.format(
-            chat_history=self.create_user_messages(config.history),
-            prompt=config.prompt
-        )
-
-        history: List[RagflowChatMessage] = [
-            RagflowChatMessage(
-                role="system",
-                content=agent_prompt
-            ),
-            RagflowChatMessage(
-                role="user",
-                content=user_prompt
-            )
-        ]
-
-        response: RagflowChatResponse = await self.query_model(
-            history=history
-        )
-
-        return TransformAgentResponse(
-            new_prompt=response.message.content,
-            usage=self.usage(history, usage_label="TransformAgent"),
-            message="Successfully queried the model!"
-        )
-
-    @classmethod
-    def create_user_messages(cls, history: List[RagflowChatMessage]) -> str:
-        message_str: str = ""
-
-        for message in history:
-
-            # only include the conversation
-            if message.role not in ["assistant", "user"]:
-                continue
-
-            message_str += CHAT_MESSAGE_PROMPT.format(
-                role=message.role,
-                content=message.content
-            )
-
-        return message_str
+class TransformAgent:
+    def transform(self, text: str) -> TransformAgentResponse:
+        # For now, a simple uppercase transformation.
+        # This can be replaced with more complex logic like summarization or translation.
+        transformed_text = text.upper()
+        return TransformAgentResponse(transformed_text=transformed_text)

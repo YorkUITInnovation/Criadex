@@ -39,7 +39,3 @@ class Event:
         if event_name in self._listeners:
             self._listeners[event_name] = [cb for cb in self._listeners[event_name] if cb != callback]
 
-    # Example usage for migration:
-    # event = Event()
-    # event.on(Event.SEARCH, lambda query: print(f"Search event: {query}"))
-    # event.emit(Event.SEARCH, query="example")

@@ -1,9 +1,15 @@
 from fastapi import APIRouter
-from criadex.index.ragflow_objects.transform import RagflowTransformAgentResponse, RagflowTransformAgent
+from pydantic import BaseModel
+from criadex.agent.azure.transform import TransformAgent, TransformAgentResponse
 
 router = APIRouter()
 
+class TransformRequest(BaseModel):
+    text: str
+
 @router.post("/models/ragflow/{model_id}/agents/transform")
-def ragflow_transform(model_id: int):
-    # Example stub: replace with actual RagflowTransformAgent logic
-    return RagflowTransformAgentResponse(message="Ragflow transform stub", model_id=model_id)
+async def ragflow_transform(model_id: int, request: TransformRequest) -> TransformAgentResponse:
+    agent = TransformAgent()
+    response = agent.transform(request.text)
+    return response
+

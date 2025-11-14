@@ -4,9 +4,10 @@ Implements bot logic for semantic search, chat, and orchestration.
 """
 
 from typing import Optional
-
+from criadex.agent.azure.chat import ChatAgent
 from criadex.core.event import Event
 from criadex.index.schemas import IndexResponse, TextNodeWithScore, TextNode, BaseNode
+
 
 class Bot:
     """
@@ -66,10 +67,16 @@ class Bot:
         # Fallback: return empty result
         return IndexResponse(nodes=[])
 
-    async def chat(self, message, context=None):
-        # Example chat orchestration (stub)
-        # Integrate LLM or custom logic here
+    async def chat(self, message: str, llm_model_id: int, context: Optional[str] = None):
+        # Emit event for chat
         self.event.emit('chat', message=message, context=context)
-        return f"Bot response to: {message}"
+
+        history = [{"role": "user", "content": message}]
+        if context:
+            history.insert(0, {"role": "system", "content": context})
+
+        agent = ChatAgent(llm_model_id=llm_model_id)
+        response = await agent.execute(history=history)
+        return response
 
 
