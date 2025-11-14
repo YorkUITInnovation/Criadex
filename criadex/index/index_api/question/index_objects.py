@@ -86,7 +86,15 @@ class QuestionParser(RagflowDocumentParser):
                 ) for i, split in enumerate(text_splits)
             ]
             all_nodes.extend(new_nodes)
-        return all_nodes
+        
+        seen_texts = set()
+        deduped_nodes = []
+        for node in all_nodes:
+            if node.text not in seen_texts:
+                seen_texts.add(node.text)
+                deduped_nodes.append(node)
+
+        return deduped_nodes
 
     def _parse_nodes(self, nodes: Sequence[RagflowBaseNode], show_progress: bool = False, **kwargs: Any) -> List[RagflowBaseNode]:
         """
@@ -115,12 +123,7 @@ class QuestionParser(RagflowDocumentParser):
         return QuestionConfig(**json.loads(document.text)).questions
 
 
-## Remove legacy QuestionCohereRerank class and CohereRerankPostprocessor logic
 
-
-    # If reranking/postprocessing is needed, implement it in an async function or handle synchronously here.
-    # For now, just return deduped_nodes to preserve feature.
-        pass  # Placeholder to preserve feature
 
 
 QUESTION_NODE_ANSWER_KEY: str = "answer"

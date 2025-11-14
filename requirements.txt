@@ -30,3 +30,4 @@ pytest-asyncio==1.2.0
 
 # Fix for fastapi-utils dependency
 typing-inspect
+tiktoken

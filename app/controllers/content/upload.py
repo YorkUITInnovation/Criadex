@@ -71,7 +71,7 @@ class UploadContentRoute(CriaRoute):
                 group_name=group_name,
                 file_name=file.file_name,
                 file_contents=file.file_contents,
-                file_metadata=file.file_metadata # Add this line
+                file_metadata=file.file_metadata
             )
             return self.ResponseModel(
                 code="SUCCESS",

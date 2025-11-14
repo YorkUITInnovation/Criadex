@@ -24,7 +24,7 @@ async def test_chat_agent_execute_positive(chat_agent):
 
     # Assertions
     chat_agent.query_model.assert_called_once_with(history)
-    chat_agent.usage.assert_called_once_with(history, usage_label="ChatAgent")
+    chat_agent.usage.assert_called_once_with(history, 3, usage_label="ChatAgent")
 
     assert isinstance(response, ChatAgentResponse)
     assert response.chat_response == {"content": "Mocked response"}
@@ -59,8 +59,49 @@ async def test_chat_agent_execute_empty_history(chat_agent):
     response = await chat_agent.execute(history)
 
     chat_agent.query_model.assert_called_once_with(history)
-    chat_agent.usage.assert_called_once_with(history, usage_label="ChatAgent")
+    chat_agent.usage.assert_called_once_with(history, 3, usage_label="ChatAgent")
 
     assert isinstance(response, ChatAgentResponse)
     assert response.chat_response == {"content": "Empty history response"}
     assert response.message == "Successfully queried the model!"
+
+
+def test_chat_agent_usage_calculation():
+    # Given
+    agent = ChatAgent(llm_model_id=1)
+    history = [
+        {"role": "user", "content": "Hello"},
+        {"role": "assistant", "content": "Hi there!"}
+    ]
+    completion_tokens = 20
+
+    # When
+    usage = agent.usage(history, completion_tokens)
+
+    # Then
+    # "Hello" is 1 token. "Hi there!" is 3 tokens.
+    assert usage["prompt_tokens"] == 4
+    assert usage["completion_tokens"] == 20
+    assert usage["total_tokens"] == 24
+    assert usage["label"] == "ChatAgent"
+
+@pytest.mark.asyncio
+async def test_chat_agent_execute_usage_calculation():
+    # Given
+    agent = ChatAgent(llm_model_id=1)
+    agent.query_model = AsyncMock(return_value=MagicMock(message="This is a response.")) # 5 tokens
+    history = [
+        {"role": "user", "content": "Hello"},
+        {"role": "assistant", "content": "Hi there!"}
+    ]
+
+    # When
+    response = await agent.execute(history)
+
+    # Then
+    # "Hello" is 1 token. "Hi there!" is 3 tokens.
+    assert response.usage["prompt_tokens"] == 4
+    # "This is a response." is 5 tokens
+    assert response.usage["completion_tokens"] == 5
+    assert response.usage["total_tokens"] == 9
+    assert response.usage["label"] == "ChatAgent"

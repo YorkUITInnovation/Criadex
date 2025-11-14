@@ -14,15 +14,18 @@ You should have received a copy of the GNU General Public License along with Cri
 
 """
 
+
+import tiktoken
 from typing import List, Optional, Any
 from criadex.index.ragflow_objects.chat import RagflowChatAgent
+from pydantic import BaseModel
 
-class ChatAgentResponse:
-    def __init__(self, chat_response: Any, usage: dict, message: str, model_id: Optional[int] = None):
-        self.chat_response = chat_response
-        self.usage = usage
-        self.message = message
-        self.model_id = model_id
+class ChatAgentResponse(BaseModel):
+    chat_response: Any
+    usage: dict
+    message: str
+    model_id: Optional[int] = None
+
 
 
 class ChatAgent(RagflowChatAgent):
@@ -33,20 +36,35 @@ class ChatAgent(RagflowChatAgent):
         super().__init__()
         self.llm_model_id = llm_model_id
 
-    def usage(self, history: List[dict], usage_label: str = "ChatAgent") -> dict:
+    def usage(self, history: List[dict], completion_tokens: int, usage_label: str = "ChatAgent") -> dict:
         """
         Calculate token usage based on chat history.
         For now, this is a placeholder.
         """
-        # In a real scenario, this would calculate tokens based on the content of history
-        # For testing and initial implementation, return a dummy usage.
-        total_tokens = sum(len(item.get("content", "").split()) for item in history)
+        encoding = tiktoken.get_encoding("cl100k_base")
+        prompt_tokens = 0
+        for message in history:
+            if 'content' in message and message['content']:
+                prompt_tokens += len(encoding.encode(message['content']))
+
         return {
-            "prompt_tokens": total_tokens,
-            "completion_tokens": 0, # Placeholder
-            "total_tokens": total_tokens,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
             "label": usage_label
         }
+
+    async def query_model(self, history: List[dict]):
+        query = ""
+        if history:
+            query = history[-1].get("content", "")
+
+        class MockResponse:
+            def __init__(self, data):
+                self.message = data
+
+        response_dict = self.chat(self.llm_model_id, query)
+        return MockResponse(response_dict["chat_response"])
 
     async def execute(self, history: List[dict]) -> ChatAgentResponse:
         """
@@ -58,9 +76,23 @@ class ChatAgent(RagflowChatAgent):
         response = await self.query_model(history)
         # Normalize response if needed (legacy logic)
         chat_response = response.message.model_dump() if hasattr(response.message, 'model_dump') else response.message
+        
+        encoding = tiktoken.get_encoding("cl100k_base")
+
+        content_to_encode = ""
+        if isinstance(chat_response, dict):
+            if "content" in chat_response:
+                content_to_encode = chat_response["content"]
+            elif "message" in chat_response and "blocks" in chat_response["message"] and chat_response["message"]["blocks"]:
+                content_to_encode = chat_response["message"]["blocks"][0].get("text", "")
+        else:
+            content_to_encode = str(chat_response)
+
+        completion_tokens = len(encoding.encode(content_to_encode))
+
         return ChatAgentResponse(
             chat_response=chat_response,
-            usage=self.usage(history, usage_label="ChatAgent"),
+            usage=self.usage(history, completion_tokens, usage_label="ChatAgent"),
             message="Successfully queried the model!",
-            model_id=self.llm_model_id # Assuming llm_model_id is available in ChatAgent
+            model_id=self.llm_model_id
         )

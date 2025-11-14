@@ -1,7 +1,9 @@
-class RagflowIntentsAgentResponse:
-    def __init__(self, message: str, model_id: int):
-        self.message = message
-        self.model_id = model_id
+from pydantic import BaseModel
+
+class RagflowIntentsAgentResponse(BaseModel):
+    message: str
+    model_id: int
+
 
 class RagflowIntentsAgent:
     def get_intents(self, model_id: int):

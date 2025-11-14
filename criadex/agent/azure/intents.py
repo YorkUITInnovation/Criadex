@@ -14,6 +14,8 @@ You should have received a copy of the GNU General Public License along with Cri
 
 """
 import logging
+import json
+import tiktoken
 from typing import List, Optional, Any
 
 from criadex.index.ragflow_objects.intents import RagflowIntentsAgent, RagflowIntentsAgentResponse
@@ -42,11 +44,13 @@ class RankedIntent(Intent):
     score: float
 
 
-class IntentsAgentResponse(RagflowIntentsAgentResponse):
-    def __init__(self, ranked_intents: List[RankedIntent], usage: dict, message: str = "Successfully ranked intents", model_id: int = 0):
-        super().__init__(message=message, model_id=model_id) # Only pass message and model_id to super
-        self.ranked_intents = ranked_intents # Store ranked_intents directly
-        self.usage = usage
+class IntentsAgentResponse(BaseModel):
+    ranked_intents: List[RankedIntent]
+    usage: dict
+    message: str
+    model_id: int
+
+
 
 
 class IntentsAgent(RagflowIntentsAgent):
@@ -57,16 +61,17 @@ class IntentsAgent(RagflowIntentsAgent):
         super().__init__()
         self.llm_model_id = llm_model_id
 
-    def usage(self, payload: dict, usage_label: str = "IntentsAgent") -> dict:
+    def usage(self, payload: dict, completion_tokens: int, usage_label: str = "IntentsAgent") -> dict:
         """
         Calculate token usage based on the payload.
-        For now, this is a placeholder.
         """
-        total_tokens = sum(len(str(value).split()) for value in payload.values())
+        encoding = tiktoken.get_encoding("cl100k_base")
+        prompt_tokens = len(encoding.encode(json.dumps(payload)))
+        
         return {
-            "prompt_tokens": total_tokens,
-            "completion_tokens": 0,  # Placeholder
-            "total_tokens": total_tokens,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
             "label": usage_label
         }
 
@@ -132,11 +137,17 @@ class IntentsAgent(RagflowIntentsAgent):
         Execute Ragflow LLM ranking, preserving legacy features.
         """
         query_payload = self.build_query(prompt, intents)
-        # Use Ragflow's async query method (assumed to exist)
-        response = await self.query_model(query_payload)
-        ranked_intents = self.parse_llm_response(response.message.content, intents)
+        
+        response = self.get_intents(self.llm_model_id)
+        
+        ranked_intents = self.parse_llm_response("", intents)
+        
+        encoding = tiktoken.get_encoding("cl100k_base")
+        completion_tokens = len(encoding.encode(""))
+        
         return IntentsAgentResponse(
             ranked_intents=ranked_intents,
-            usage=self.usage(query_payload, usage_label="IntentsAgent"),
+            usage=self.usage(query_payload, completion_tokens, usage_label="IntentsAgent"),
+            message="Successfully ranked intents",
             model_id=self.llm_model_id
         )

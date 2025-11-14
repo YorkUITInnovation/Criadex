@@ -49,7 +49,7 @@ class RagflowVectorStore:
                                 "properties": {
                                     "file_name": {"type": "keyword"},
                                     "updated_at": {"type": "date"},
-                                    "update_id": {"type": "keyword"} # Add this line
+                                    "update_id": {"type": "keyword"}
                                 }
                             },
                             "embedding": {
