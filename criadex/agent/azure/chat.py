@@ -63,7 +63,7 @@ class ChatAgent(RagflowChatAgent):
             def __init__(self, data):
                 self.message = data
 
-        response_dict = self.chat(self.llm_model_id, query)
+        response_dict = await self.chat(self.llm_model_id, query)
         return MockResponse(response_dict["chat_response"])
 
     async def execute(self, history: List[dict]) -> ChatAgentResponse:
