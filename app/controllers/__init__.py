@@ -20,7 +20,7 @@ from typing import Optional, Literal
 from fastapi import APIRouter, Header, Depends
 from starlette.responses import Response
 
-from app.controllers import agents, docs, auth, content, group_auth, models, groups
+from app.controllers import agents, docs, auth, content, group_auth, models, groups, ragflow
 from app.controllers.models import cohere_models, azure_models
 
 
@@ -38,6 +38,7 @@ router.include_router(groups.router)
 router.include_router(content.router)
 router.include_router(models.router)
 router.include_router(agents.router)
+router.include_router(ragflow.view)
 
 
 class HealthCheckFilter(logging.Filter):

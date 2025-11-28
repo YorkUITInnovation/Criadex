@@ -7,7 +7,7 @@ from criadex.index.ragflow_objects.intents import RagflowIntentsAgent, RagflowIn
 def intents_agent():
     agent = IntentsAgent(llm_model_id=1)
     # Mock the get_intents method of the RagflowIntentsAgent base class
-    agent.get_intents = MagicMock(return_value=RagflowIntentsAgentResponse(message="test message", model_id=1))
+    agent.get_intents = MagicMock(return_value=RagflowIntentsAgentResponse(message="test message", model_id="1"))
     return agent
 
 @pytest.fixture

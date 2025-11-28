@@ -8,7 +8,7 @@ class LanguageRequest(BaseModel):
     text: str
 
 @router.post("/models/ragflow/{model_id}/agents/language")
-async def ragflow_language(model_id: int, request: LanguageRequest) -> LanguageAgentResponse:
+async def ragflow_language(model_id: str, request: LanguageRequest) -> LanguageAgentResponse:
     agent = LanguageAgent()
     response = agent.detect(request.text)
     return response

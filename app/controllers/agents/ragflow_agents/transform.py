@@ -8,7 +8,7 @@ class TransformRequest(BaseModel):
     text: str
 
 @router.post("/models/ragflow/{model_id}/agents/transform")
-async def ragflow_transform(model_id: int, request: TransformRequest) -> TransformAgentResponse:
+async def ragflow_transform(model_id: str, request: TransformRequest) -> TransformAgentResponse:
     agent = TransformAgent()
     response = agent.transform(request.text)
     return response

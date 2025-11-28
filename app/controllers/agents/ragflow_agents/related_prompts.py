@@ -5,7 +5,7 @@ from criadex.schemas import AgentRelatedPromptsResponse, RelatedPromptsAgentResp
 router = APIRouter()
 
 @router.post("/models/{model_id}/related_prompts")
-def ragflow_related_prompts(model_id: int):
+def ragflow_related_prompts(model_id: str):
     return AgentRelatedPromptsResponse(
         agent_response=RelatedPromptsAgentResponse(
             related_prompts=[],

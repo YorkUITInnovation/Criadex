@@ -48,16 +48,14 @@ class IntentsAgentResponse(BaseModel):
     ranked_intents: List[RankedIntent]
     usage: dict
     message: str
-    model_id: int
-
-
-
+    model_id: str
+    
 
 class IntentsAgent(RagflowIntentsAgent):
     """
     Ragflow-based IntentsAgent with legacy feature parity: ranking, parsing, error handling.
     """
-    def __init__(self, llm_model_id: int):
+    def __init__(self, llm_model_id: str):
         super().__init__()
         self.llm_model_id = llm_model_id
 
@@ -149,5 +147,5 @@ class IntentsAgent(RagflowIntentsAgent):
             ranked_intents=ranked_intents,
             usage=self.usage(query_payload, completion_tokens, usage_label="IntentsAgent"),
             message="Successfully ranked intents",
-            model_id=self.llm_model_id
+            model_id=str(self.llm_model_id)
         )

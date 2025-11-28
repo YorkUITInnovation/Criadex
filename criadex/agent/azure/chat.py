@@ -24,7 +24,7 @@ class ChatAgentResponse(BaseModel):
     chat_response: Any
     usage: dict
     message: str
-    model_id: Optional[int] = None
+    model_id: Optional[str] = None
 
 
 
@@ -32,7 +32,7 @@ class ChatAgent(RagflowChatAgent):
     """
     Ragflow-based ChatAgent with legacy feature parity: response normalization, usage calculation, error handling.
     """
-    def __init__(self, llm_model_id: int):
+    def __init__(self, llm_model_id: str):
         super().__init__()
         self.llm_model_id = llm_model_id
 
@@ -54,26 +54,22 @@ class ChatAgent(RagflowChatAgent):
             "label": usage_label
         }
 
-    async def query_model(self, history: List[dict]):
-        query = ""
-        if history:
-            query = history[-1].get("content", "")
-
+    async def query_model(self, history: List[dict], chat_id: str, api_key: str):
         class MockResponse:
             def __init__(self, data):
                 self.message = data
 
-        response_dict = await self.chat(self.llm_model_id, query)
+        response_dict = await self.chat(chat_id, history, api_key)
         return MockResponse(response_dict["chat_response"])
 
-    async def execute(self, history: List[dict]) -> ChatAgentResponse:
+    async def execute(self, history: List[dict], chat_id: str, api_key: str) -> ChatAgentResponse:
         """
         Execute the chat agent, preserving legacy features.
         :param history: List of chat messages (dicts)
         :return: ChatAgentResponse
         """
         # Query Ragflow model (assumed to accept history as input)
-        response = await self.query_model(history)
+        response = await self.query_model(history, chat_id, api_key)
         # Normalize response if needed (legacy logic)
         chat_response = response.message.model_dump() if hasattr(response.message, 'model_dump') else response.message
         
@@ -94,5 +90,5 @@ class ChatAgent(RagflowChatAgent):
             chat_response=chat_response,
             usage=self.usage(history, completion_tokens, usage_label="ChatAgent"),
             message="Successfully queried the model!",
-            model_id=self.llm_model_id
+            model_id=str(self.llm_model_id)
         )

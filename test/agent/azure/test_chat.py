@@ -20,10 +20,10 @@ async def test_chat_agent_execute_positive(chat_agent):
     ]
 
     # Execute the chat agent
-    response = await chat_agent.execute(history)
+    response = await chat_agent.execute(history, "test_chat_id", "test_api_key")
 
     # Assertions
-    chat_agent.query_model.assert_called_once_with(history)
+    chat_agent.query_model.assert_called_once_with(history, "test_chat_id", "test_api_key")
     chat_agent.usage.assert_called_once_with(history, 3, usage_label="ChatAgent")
 
     assert isinstance(response, ChatAgentResponse)
@@ -42,7 +42,7 @@ async def test_chat_agent_execute_with_non_pydantic_message(chat_agent):
         message="Simple string response"
     )
 
-    response = await chat_agent.execute(history)
+    response = await chat_agent.execute(history, "test_chat_id", "test_api_key")
 
     assert isinstance(response, ChatAgentResponse)
     assert response.chat_response == "Simple string response"
@@ -56,9 +56,9 @@ async def test_chat_agent_execute_empty_history(chat_agent):
         message=MagicMock(model_dump=lambda: {"content": "Empty history response"})
     )
 
-    response = await chat_agent.execute(history)
+    response = await chat_agent.execute(history, "test_chat_id", "test_api_key")
 
-    chat_agent.query_model.assert_called_once_with(history)
+    chat_agent.query_model.assert_called_once_with(history, "test_chat_id", "test_api_key")
     chat_agent.usage.assert_called_once_with(history, 3, usage_label="ChatAgent")
 
     assert isinstance(response, ChatAgentResponse)
@@ -96,7 +96,7 @@ async def test_chat_agent_execute_usage_calculation():
     ]
 
     # When
-    response = await agent.execute(history)
+    response = await agent.execute(history, "test_chat_id", "test_api_key")
 
     # Then
     # "Hello" is 1 token. "Hi there!" is 3 tokens.
