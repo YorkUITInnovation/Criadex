@@ -1,6 +1,3 @@
-USE criadex;
-
-
 CREATE TABLE IF NOT EXISTS `AzureModels`
 (
     `id`             INT AUTO_INCREMENT PRIMARY KEY,
