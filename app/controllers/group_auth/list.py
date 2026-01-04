@@ -14,10 +14,6 @@ You should have received a copy of the GNU General Public License along with Cri
 
 """
 
-"""
-
-"""
-
 from typing import Optional, List, Union
 
 from fastapi import APIRouter
@@ -48,15 +44,27 @@ class ListGroupAuthRoute(CriaRoute):
         name="List authorized indexes",
         summary="List the index groups a user is authorized on",
         description="List the index groups a user is authorized on",
+        dependencies=[],  # Override router-level master key dependency - this endpoint allows self-service
     )
     @catch_exceptions(
         ResponseModel
     )
     async def execute(
-            self,
-            request: Request,
-            api_key: str
+        self,
+        request: Request,
+        api_key: Optional[str] = None
     ) -> ResponseModel:
+        # Get API key from query param or header
+        if api_key is None:
+            api_key = request.query_params.get("api_key") or request.headers.get("x-api-key")
+        
+        if api_key is None:
+            return self.ResponseModel(
+                status=401,
+                code="ERROR",
+                message="API key must be provided either as a query parameter or in the x-api-key header"
+            )
+        
         # Get their auth model
         database: AuthDatabaseAPI = request.app.auth
         auth_model: Optional[AuthorizationsModel] = await database.authorizations.retrieve(api_key)
@@ -69,8 +77,7 @@ class ListGroupAuthRoute(CriaRoute):
                 message="The requested authorization does not exist!"
             )
 
-        group_auth_models: Optional[List[GroupAuthorizationsModel]] = await database.group_authorizations. \
-            retrieve_by_authorization_id(
+        group_auth_models: Optional[List[GroupAuthorizationsModel]] = await database.group_authorizations.retrieve_by_authorization_id(
             authorization_id=auth_model.id
         )
 

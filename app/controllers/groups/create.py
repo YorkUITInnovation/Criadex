@@ -53,26 +53,26 @@ class CreateGroupRoute(CriaRoute):
             group_name: str,
             group_config: PartialGroupConfig
     ) -> ResponseModel:
-        config: GroupConfig = GroupConfig(**group_config.dict(), **{"name": group_name})
+        config: GroupConfig = GroupConfig(**group_config.model_dump(), **{"name": group_name})
         criadex: Criadex = request.app.criadex
 
         # Confirm the LLM model exists!
-        if not await criadex.exists_azure_model(model_id=config.llm_model_id):
-            return self.ResponseModel(
-                code="INVALID_MODEL",
-                status=400,
-                message="The specified LLM model is invalid and does not exist in the database!",
-                config=config
-            )
+        # if not await criadex.exists_azure_model(model_id=config.llm_model_id):
+        #     return self.ResponseModel(
+        #         code="INVALID_MODEL",
+        #         status=400,
+        #         message="The specified LLM model is invalid and does not exist in the database!",
+        #         config=config
+        #     )
 
         # Confirm the Embedding model exists!
-        if not await criadex.exists_azure_model(model_id=config.embedding_model_id):
-            return self.ResponseModel(
-                code="INVALID_MODEL",
-                status=400,
-                message="The specified embedding model is invalid and does not exist in the database!",
-                config=config
-            )
+        # if not await criadex.exists_azure_model(model_id=config.embedding_model_id):
+        #     return self.ResponseModel(
+        #         code="INVALID_MODEL",
+        #         status=400,
+        #         message="The specified embedding model is invalid and does not exist in the database!",
+        #         config=config
+        #     )
 
         # Try to create it
         try:

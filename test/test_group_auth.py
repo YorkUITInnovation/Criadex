@@ -5,8 +5,8 @@ from app.controllers.group_auth.check import GroupAuthCheckResponse
 from app.controllers.group_auth.create import GroupAuthCreateResponse
 from app.controllers.group_auth.delete import GroupAuthDeleteResponse
 from app.controllers.group_auth.list import GroupAuthListResponse
-from utils.misc_utils import assert_exists_index, reset_group_auth
-from utils.test_client import CriaTestClient, sample_master_headers, sample_document_index, sample_question_index, client, sample_master_key, assert_response_shape, sample_non_master_key
+from .utils.misc_utils import assert_exists_index, reset_group_auth
+from .utils.test_client import CriaTestClient, assert_response_shape
 
 
 @pytest.mark.asyncio

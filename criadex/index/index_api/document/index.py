@@ -15,17 +15,15 @@ You should have received a copy of the GNU General Public License along with Cri
 """
 
 from typing import List
-
-from llama_index.core.postprocessor import MetadataReplacementPostProcessor
-from llama_index.core.postprocessor.types import BaseNodePostprocessor
+import os
 
 from criadex.database.tables.groups import GroupsModel
 from criadex.index.base_api import CriadexIndexAPI, ContentUploadConfig
 from criadex.index.index_api.document.index_objects import DocumentCohereRerank, DocumentConfig, MetadataKeys, \
     DocumentParser
-from criadex.index.index_api.document.store_index import DocumentVectorStoreIndex
-from criadex.index.llama_objects.extra_utils import NodeTokenParser
-from criadex.index.llama_objects.models import CriaEmbedding, CriaCohereRerank
+from criadex.index.ragflow_objects.vector_store import RagflowVectorStore
+from criadex.index.ragflow_objects.embedder import RagflowEmbedder
+from criadex.index.ragflow_objects.postprocessor import RagflowPostprocessor
 from criadex.index.schemas import SearchConfig, ServiceConfig, Bundle
 
 
@@ -43,6 +41,10 @@ class DocumentIndexAPI(CriadexIndexAPI[DocumentConfig]):
         :return: None
 
         """
+
+        # In testing, avoid seeding embeddings (external calls). Always attach to existing collection.
+        if os.environ.get('APP_API_MODE', 'TESTING') == 'TESTING':
+            is_new = False
 
         self._index = await (
             DocumentVectorStoreIndex.from_scratch if is_new else DocumentVectorStoreIndex.from_store

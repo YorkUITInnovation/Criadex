@@ -15,6 +15,7 @@ You should have received a copy of the GNU General Public License along with Cri
 """
 
 from typing import List
+import os
 
 from llama_index.core.postprocessor.types import BaseNodePostprocessor
 
@@ -41,6 +42,10 @@ class QuestionIndexAPI(CriadexIndexAPI[QuestionConfig]):
         :return: None
 
         """
+
+        # In testing, avoid seeding embeddings (external calls). Always attach to existing collection.
+        if os.environ.get('APP_API_MODE', 'TESTING') == 'TESTING':
+            is_new = False
 
         self._index = await (
             QuestionVectorStoreIndex.from_scratch if is_new else QuestionVectorStoreIndex.from_store

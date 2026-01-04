@@ -25,7 +25,7 @@ from app.controllers.schemas import catch_exceptions, APIResponse, SUCCESS, ERRO
 from app.core.config import QUERY_MODEL_RATE_LIMIT_DAY, QUERY_MODEL_RATE_LIMIT_HOUR, QUERY_MODEL_RATE_LIMIT_MINUTE
 from app.core.route import CriaRoute
 from app.core.schemas import model_query_limiter
-from criadex.agent.azure.language import LanguageAgentResponse, LanguageAgent
+from criadex.index.ragflow_objects.language import RagflowLanguageAgentResponse, RagflowLanguageAgent
 
 view = APIRouter()
 
@@ -46,7 +46,7 @@ class LanguageAgentRoute(CriaRoute):
 
     # noinspection PyUnusedLocal
     @view.post(
-        path="/models/azure/{model_id}/agents/language",
+        path="/models/ragflow/{model_id}/agents/language",
         name="Use the Language agent",
         summary="Use the Language agent",
         description="Use the Language agent",

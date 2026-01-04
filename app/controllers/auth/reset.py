@@ -65,6 +65,15 @@ class ResetAuthRoute(CriaRoute):
             )
 
         # Update value
+        # If the new key already exists, return a conflict instead of exploding
+        if await database.authorizations.exists(new_key):
+            return self.ResponseModel(
+                status=409,
+                code="ERROR",
+                message="The new API key already exists. Choose a different value.",
+                new_key=None
+            )
+
         await database.authorizations.reset(
             key=api_key,
             new_key=new_key

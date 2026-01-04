@@ -16,23 +16,20 @@ You should have received a copy of the GNU General Public License along with Cri
 
 from typing import List
 
-from llama_index.core.base.llms.types import ChatMessage, MessageRole, ChatResponse
-from llama_index.core.prompts import PromptTemplate
+from criadex.index.ragflow_objects.related_prompts import RagflowRelatedPromptsAgent, RagflowRelatedPromptsAgentResponse
+from criadex.index.ragflow_objects.schemas import RagflowChatMessage, RagflowChatResponse
+from criadex.index.index_api.question.index_objects import RelatedPrompt
+## PromptTemplate import removed; use plain string formatting
 
-from ..azure_agent import LLMAgentResponse, LLMAgent
-from ...index.index_api.question.index_objects import RelatedPrompt
 
-
-class RelatedPromptsGenerationAgentResponse(LLMAgentResponse):
+class RelatedPromptsGenerationAgentResponse(RagflowRelatedPromptsAgentResponse):
     """
     Response from the IntentsAgent
-
     """
-
     related_prompts: List[RelatedPrompt]
 
 
-class RelatedPromptsGenerationAgent(LLMAgent):
+class RelatedPromptsGenerationAgent(RagflowRelatedPromptsAgent):
     """Automatically generate related prompts"""
 
     DIVIDER_TEXT: str = "<>"
@@ -54,31 +51,19 @@ class RelatedPromptsGenerationAgent(LLMAgent):
         "Let's try this now:\n\n"
     )
 
-    USER_TEMPLATE: PromptTemplate = PromptTemplate(
+    USER_TEMPLATE: str = (
         "[PROMPT]\n{llm_prompt}\n\n"
         "[LLM-Generated Answer]\n{llm_reply}\n\n"
     )
 
-    def build_llm_query(
-            self,
-            llm_prompt: str,
-            llm_reply: str
-    ) -> List[ChatMessage]:
-        """
-        Build an LLM query for ranking the intents
-
-        :param llm_prompt: The prompt
-        :param llm_reply: The reply
-
-        """
-
+    def build_llm_query(self, llm_prompt: str, llm_reply: str) -> List[RagflowChatMessage]:
         return [
-            ChatMessage(
-                role=MessageRole.SYSTEM,
+            RagflowChatMessage(
+                role="system",
                 content=self.SYSTEM_MESSAGE
             ),
-            ChatMessage(
-                role=MessageRole.USER,
+            RagflowChatMessage(
+                role="user",
                 content=self.USER_TEMPLATE.format(
                     llm_prompt=llm_prompt,
                     llm_reply=llm_reply,
@@ -87,24 +72,13 @@ class RelatedPromptsGenerationAgent(LLMAgent):
         ]
 
     @classmethod
-    def _parse_llm_response(
-            cls,
-            llm_response: ChatResponse,
-    ) -> List[RelatedPrompt]:
-        """
-        Given a response from the LLM (based on build_query_chat), extract the correct rankings from the string
-
-        :param llm_response: The response
-        :return: The intents, ranked in order of relevance to the query
-
-        """
-
+    def _parse_llm_response(cls, llm_response: RagflowChatResponse) -> List[RelatedPrompt]:
         related_questions: List[str] = llm_response.message.content.split("\n")
         related_prompts: List[RelatedPrompt] = []
-
         for related_question in related_questions:
+            if not related_question:
+                continue
             label, prompt = related_question.split(cls.DIVIDER_TEXT)
-
             related_prompts.append(
                 RelatedPrompt(
                     label=label,
@@ -112,7 +86,6 @@ class RelatedPromptsGenerationAgent(LLMAgent):
                     llm_generated=True
                 )
             )
-
         return related_prompts
 
     async def execute(
@@ -122,16 +95,15 @@ class RelatedPromptsGenerationAgent(LLMAgent):
     ) -> RelatedPromptsGenerationAgentResponse:
         """
         Rank intents executor
-
         """
 
-        history: List[ChatMessage] = self.build_llm_query(
+        history: List[RagflowChatMessage] = self.build_llm_query(
             llm_prompt=llm_prompt,
             llm_reply=llm_reply
         )
 
         # Ask the LLM for a reply
-        response: ChatResponse = await self.query_model(
+        response: RagflowChatResponse = await self.query_model(
             history=history
         )
 

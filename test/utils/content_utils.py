@@ -44,7 +44,7 @@ def sample_document_updated() -> DocumentConfig:
     sample_doc = sample_document()
     update_id: str = str(uuid.uuid4())
     sample_doc.nodes[-1].text = f"[PYTEST] [update_id={update_id}] This NarrativeText element has been updated."
-    sample_doc.nodes[-1].metadata['update_id'] = update_id
+    sample_doc.nodes[-1].metadata = {'update_id': update_id} # Explicitly set metadata
 
     return sample_doc
 

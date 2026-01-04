@@ -1,5 +1,4 @@
 """
-
 This file is part of Criadex.
 
 Criadex is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
@@ -7,10 +6,18 @@ Criadex is distributed in the hope that it will be useful, but WITHOUT ANY WARRA
 You should have received a copy of the GNU General Public License along with Criadex. If not, see <https://www.gnu.org/licenses/>.
 
 @package    Criadex
-@author     Isaac Kogan
-@copyright  2024 onwards York University (https://yorku.ca/)
+@author     kiarash b
+@copyright  2025 onwards York University (https://yorku.ca/)
 @repository https://github.com/YorkUITInnovation/Criadex
 @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
-
 """
 
+def token_count(text: str) -> int:
+    # Dummy token count, replace with actual tokenizer if needed
+    return len(text.split())
+
+TOKEN_COUNT_METADATA_KEY = "token_count"
+
+def add_token_metadata(doc: dict) -> dict:
+    doc[TOKEN_COUNT_METADATA_KEY] = token_count(doc.get("text", ""))
+    return doc

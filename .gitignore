@@ -11,5 +11,18 @@
 # Cache Files
 tiktoken
 
+# Doc
+doc/
 
+# Python
+__pycache__/
+*.py[cod]
+*.class
 
+# IDE
+.vscode/
+.idea/
+
+# Test
+.pytest_cache
+.coverage

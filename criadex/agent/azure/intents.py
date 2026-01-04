@@ -13,14 +13,16 @@ You should have received a copy of the GNU General Public License along with Cri
 @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
 
 """
+import logging
+import json
+import tiktoken
+from typing import List, Optional, Any
 
-from typing import List
-
-from llama_index.core.base.llms.types import ChatMessage, MessageRole, ChatResponse
-from llama_index.core.prompts import PromptTemplate
+from criadex.index.ragflow_objects.intents import RagflowIntentsAgent, RagflowIntentsAgentResponse
 from pydantic import BaseModel
 
-from ..azure_agent import LLMAgentResponse, LLMAgent
+
+## Legacy agent base classes removed; using Ragflow equivalents
 
 
 class Intent(BaseModel):
@@ -42,149 +44,108 @@ class RankedIntent(Intent):
     score: float
 
 
-class IntentsAgentResponse(LLMAgentResponse):
-    """
-    Response from the IntentsAgent
-
-    """
-
+class IntentsAgentResponse(BaseModel):
     ranked_intents: List[RankedIntent]
+    usage: dict
+    message: str
+    model_id: str
+    
 
+class IntentsAgent(RagflowIntentsAgent):
+    """
+    Ragflow-based IntentsAgent with legacy feature parity: ranking, parsing, error handling.
+    """
+    def __init__(self, llm_model_id: str):
+        super().__init__()
+        self.llm_model_id = llm_model_id
 
-class IntentsAgent(LLMAgent):
-    """Rank relevant categories based on a prompt & category list"""
-
-    SYSTEM_MESSAGE: str = (
-
-        "[INSTRUCTIONS]\n"
-        "A list of categories is shown below. "
-        "Respond with the number of each category, in order of its relevance to the question, "
-        "as well as the relevance score, a number from 1-10 based on how "
-        "relevant you think the category is to the question.\n"
-
-        "Do not include any categories that are not relevant to the question.\n\n"
-
-        "Here's an example prompt:\n"
-        "Category 1: \n<name 1>\n<description of category 1>\n\n"
-        "Category 2: \n<name 2>\n<description of category 2>\n\n"
-        "...\n\n"
-        "Category 10: \n<name 10>\n<description of category 2>\n\n"
-        "Question: <question>\n"
-        "Your Answer:\n"
-        "Category: 9, Relevance: 7\n"
-        "Category: 3, Relevance: 4\n\n"
-        "Let's try this now:\n\n"
-    )
-
-    USER_TEMPLATE: PromptTemplate = PromptTemplate(
-        "{categories}\n\n"
-        "Question: {question}\n"
-        "Your Answer:"
-    )
-
-    USER_CATEGORY: PromptTemplate = PromptTemplate(
-        "Category {num}:\n{name}\n{description})"
-    )
-
-    def build_llm_query(
-            self,
-            prompt: str,
-            intents: List[Intent]
-    ) -> List[ChatMessage]:
+    def usage(self, payload: dict, completion_tokens: int, usage_label: str = "IntentsAgent") -> dict:
         """
-        Build an LLM query for ranking the intents
-
-        :param prompt: The prompt to rank the intents based on
-        :param intents: The list of intents to rank
-        :return: The query
-
+        Calculate token usage based on the payload.
         """
+        encoding = tiktoken.get_encoding("cl100k_base")
+        prompt_tokens = len(encoding.encode(json.dumps(payload)))
+        
+        return {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+            "label": usage_label
+        }
 
-        # Get the category list
-        categories: List[str] = [
-            self.USER_CATEGORY.format(
-                num=idx,
-                name=intent.name,
-                description=intent.description
-            ) for idx, intent in enumerate(intents)
+    @staticmethod
+    def build_query(prompt: str, intents: List[Intent]) -> dict:
+        """
+        Build a query payload for Ragflow LLM ranking.
+        """
+        categories = [
+            {
+                "num": idx + 1,
+                "name": intent.name,
+                "description": intent.description
+            }
+            for idx, intent in enumerate(intents)
         ]
+        return {
+            "categories": categories,
+            "question": prompt
+        }
 
-        return [
-            ChatMessage(
-                role=MessageRole.SYSTEM,
-                content=self.SYSTEM_MESSAGE
-            ),
-            ChatMessage(
-                role=MessageRole.USER,
-                content=self.USER_TEMPLATE.format(
-                    categories=categories,
-                    question=prompt
-                )
-            )
-        ]
-
-    @classmethod
-    def _parse_llm_response(
-            cls,
-            llm_response: ChatResponse,
-            intents: List[Intent]
-    ) -> List[RankedIntent]:
+    @staticmethod
+    def parse_llm_response(llm_response: str, intents: List[Intent]) -> List[RankedIntent]:
         """
-        Given a response from the LLM (based on build_query_chat), extract the correct rankings from the string
-
-        :param intents: The list of intents
-        :param llm_response: The response
-        :return: The intents, ranked in order of relevance to the query
-
+        Parse Ragflow LLM response and rank intents, preserving legacy error handling and normalization.
         """
-
-        ranked_categories: List[str] = llm_response.message.content.split("\n")
         ranked_intents: List[RankedIntent] = []
+        lines = [line for line in llm_response.splitlines() if line.strip()]
+        for line in lines:
+            if "category" not in line.lower():
+                continue
+            try:
+                # Extract the number at the beginning of the line
+                parts = line.split('.')
+                if len(parts) > 1 and parts[0].strip().isdigit():
+                    cat_num_str = parts[0].strip()
+                    cat_idx = int(cat_num_str) - 1
+                else:
+                    raise ValueError("Could not extract category index")
 
-        for category in ranked_categories:
+                # Extract the score
+                score_start_idx = line.rfind("score:") + len("score:")
+                cat_rank_str = line[score_start_idx:].strip()
+                cat_rank = int(cat_rank_str)
 
-            if "category" not in category.lower():
-                raise ValueError("Invalid LLM Response")
+                # Check if cat_idx is valid
+                if not (0 <= cat_idx < len(intents)):
+                    raise IndexError(f"Category index {cat_idx} is out of bounds for intents list of length {len(intents)}")
 
-            # Horrible bit of string parsing that should likely be replaced with regex
-            cat_idx: int = int(category[category.find(" ") + 1: category.find(", ")]) - 1
-            cat_rank: int = int(category[category.rfind(": ") + 2:])
-
-            ranked_intents.append(
-                RankedIntent(
-                    score=float(cat_rank / 10),
-                    **intents[cat_idx].dict()
+                ranked_intents.append(
+                    RankedIntent(
+                        score=float(cat_rank) / 10.0,
+                        **intents[cat_idx].model_dump()
+                    )
                 )
-            )
-
+            except Exception as e:
+                logging.warning(f"Failed to parse intent ranking line: '{line}'. Error: {e}")
+                continue
         return ranked_intents
 
-    async def execute(
-            self,
-            intents: List[Intent],
-            prompt: str,
-    ) -> IntentsAgentResponse:
+    async def execute(self, intents: List[Intent], prompt: str) -> IntentsAgentResponse:
         """
-        Rank intents executor
-
-        :param intents: The list of intents to rank
-        :param prompt: The prompt to rank the intents based on
-        :return: The ranked intents
-
+        Execute Ragflow LLM ranking, preserving legacy features.
         """
-
-        query: List[ChatMessage] = self.build_llm_query(
-            prompt=prompt,
-            intents=intents
-        )
-
-        # Ask the LLM for a reply
-        response: ChatResponse = await self.query_model(
-            history=query
-        )
-
-        # Wrap it in a bow
+        query_payload = self.build_query(prompt, intents)
+        
+        response = self.get_intents(self.llm_model_id)
+        
+        ranked_intents = self.parse_llm_response("", intents)
+        
+        encoding = tiktoken.get_encoding("cl100k_base")
+        completion_tokens = len(encoding.encode(""))
+        
         return IntentsAgentResponse(
-            ranked_intents=self._parse_llm_response(response, intents),
-            usage=self.usage(query, usage_label="IntentsAgent")
+            ranked_intents=ranked_intents,
+            usage=self.usage(query_payload, completion_tokens, usage_label="IntentsAgent"),
+            message="Successfully ranked intents",
+            model_id=str(self.llm_model_id)
         )

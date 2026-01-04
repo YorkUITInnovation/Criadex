@@ -14,9 +14,14 @@ You should have received a copy of the GNU General Public License along with Cri
 
 """
 from enum import Enum
-from typing import Optional, Type, Literal, cast
+from typing import Optional, Type, Literal, cast, TypeVar, Callable, Awaitable, List
+import time
+import logging
+import traceback
+from functools import wraps
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
+
 
 IndexTypeKeys: Type = Literal["DOCUMENT", "QUESTION"]
 
@@ -42,6 +47,83 @@ class IndexType(int, Enum):
         return cast(int, super().value)
 
 
+class APIResponse(BaseModel):
+    """
+    Global API Response format that ALL responses must follow
+
+    """
+
+    status: int = 200
+    message: Optional[str] = "Successfully completed the request!"
+    timestamp: int = round(time.time())
+    code: str = "SUCCESS"
+    error: Optional[str] = Field(default=None, exclude=True)
+
+    def dict(self, *args, **kwargs):
+
+        self.message = self.message or {
+            200: 'Request completed successfully!',
+            409: 'The requested resource already exists!',
+            400: 'You, the client, made a mistake...',
+            500: 'An internal error occurred! :(',
+            404: 'Womp womp. Not found!'
+        }.get(self.status)
+
+        data: dict = super().dict(*args, **kwargs)
+
+        if "error" in data and data["error"] is None:
+            del data["error"]
+
+        return data
+
+    model_config = ConfigDict(
+        json_schema_extra=lambda schema, model: {
+            "properties": {
+                k: v for k, v in schema.get("properties", {}).items()
+                if not v.get("hidden", v.get("exclude", None))
+            }
+        }
+    )
+
+
+APIResponseModel = TypeVar('APIResponseModel', bound=APIResponse)
+
+UNAUTHORIZED: Type = Literal["UNAUTHORIZED"]
+TIMEOUT: Type = Literal["TIMEOUT"]
+ERROR: Type = Literal["ERROR"]
+SUCCESS: Type = Literal["SUCCESS"]
+NOT_FOUND: Type = Literal["NOT_FOUND"]
+RATE_LIMIT: Type = Literal["RATE_LIMIT"]
+DUPLICATE: Type = Literal["DUPLICATE"]
+INVALID_INDEX_TYPE: Type = Literal["INVALID_INDEX_TYPE"]
+GROUP_NOT_FOUND: Type = Literal["GROUP_NOT_FOUND"]
+FILE_NOT_FOUND: Type = Literal["FILE_NOT_FOUND"]
+INVALID_FILE_DATA: Type = Literal["INVALID_FILE_DATA"]
+MODEL_IN_USE: Type = Literal["MODEL_IN_USE"]
+MODEL_NOT_FOUND: Type = Literal["MODEL_NOT_FOUND"]
+INVALID_MODEL: Type = Literal["INVALID_MODEL"]
+INVALID_REQUEST: Type = Literal["INVALID_REQUEST"]
+OPENAI_FILTER: Type = Literal["OPENAI_FILTER"]
+
+
+class RateLimitResponse(APIResponse):
+    status: int = 429
+    code: RATE_LIMIT
+
+
+class GroupExistsResponse(APIResponse):
+    """
+    Response for checking if a group exists.
+    """
+    exists: bool = Field(..., description="Whether the group exists.")
+
+
+class UnauthorizedResponse(APIResponse):
+    code: UNAUTHORIZED = "UNAUTHORIZED"
+    status: int = 401
+    detail: Optional[str]
+
+
 class PartialGroupConfig(BaseModel):
     """
     Model representing the configuration of a NEW index group
@@ -63,18 +145,6 @@ class GroupConfig(PartialGroupConfig):
     name: str
 
 
-class QdrantCredentials(BaseModel):
-    """
-    Model representing the credentials for accessing the Qdrant API
-
-    """
-
-    host: str
-    port: int
-    grpc_port: int
-    api_key: Optional[str] = None
-
-
 class MySQLCredentials(BaseModel):
     """
     Credentials for accessing the MySQL Database
@@ -86,6 +156,19 @@ class MySQLCredentials(BaseModel):
     username: str
     password: Optional[str] = None
     database: str
+
+
+class ElasticsearchCredentials(BaseModel):
+    """
+    Model representing the credentials for accessing the Elasticsearch API
+
+    """
+
+    host: str
+    port: int
+    api_key: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
 
 
 class IndexActivatedError(RuntimeError):
@@ -142,3 +225,40 @@ class DocumentNotFoundError(RuntimeError):
     Thrown if the document does not exist in the index group and is being accessed
 
     """
+
+
+class EmptyPromptError(RuntimeError):
+    """
+    Thrown if the prompt is empty.
+
+    """
+
+
+class CompletionUsage(BaseModel):
+    completion_tokens: int
+    prompt_tokens: int
+    total_tokens: int
+    usage_label: Optional[str] = None
+
+
+class RelatedPrompt(BaseModel):
+    label: str
+    prompt: str
+    llm_generated: bool = False
+
+
+class BaseAgentResponse(BaseModel):
+    message: Optional[str] = None
+
+
+class LLMAgentResponse(BaseAgentResponse):
+    usage: List[CompletionUsage]
+
+
+class RelatedPromptsAgentResponse(LLMAgentResponse):
+    related_prompts: List[RelatedPrompt]
+
+
+class AgentRelatedPromptsResponse(BaseModel):
+    agent_response: Optional[RelatedPromptsAgentResponse]
+

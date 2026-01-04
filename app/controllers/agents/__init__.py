@@ -19,8 +19,11 @@ from fastapi import Security
 from app.core.security import get_api_key_model_query
 from app.core import config
 from app.core.schemas import AppMode
-from .azure_agents import intents, chat, language
-from .cohere_agents import rerank
+from .ragflow_agents.chat import router as chat_router
+from .ragflow_agents.intents import router as intents_router
+from .ragflow_agents.language import router as language_router
+from .ragflow_agents.related_prompts import router as related_prompts_router
+from .ragflow_agents.transform import router as transform_router
 from ...core.route import CriaRouter
 
 router = CriaRouter(
@@ -28,8 +31,11 @@ router = CriaRouter(
 )
 
 router.include_views(
-    azure_agents.router,
-    cohere_agents.router
+    chat_router,
+    intents_router,
+    language_router,
+    related_prompts_router,
+    transform_router,
 )
 
 __all__ = ["router"]

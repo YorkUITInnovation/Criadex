@@ -28,7 +28,10 @@ from app.core.config import SEARCH_INDEX_LIMIT_DAY, SEARCH_INDEX_LIMIT_HOUR, SEA
 from app.core.route import CriaRoute
 from app.core.schemas import index_search_limiter
 from criadex.group import Group
-from criadex.index.llama_objects.models import EmptyPromptError
+
+# Legacy import removed. Define locally:
+class EmptyPromptError(Exception):
+    pass
 from criadex.index.schemas import IndexResponse, SearchConfig
 from criadex.schemas import GroupNotFoundError
 
@@ -96,7 +99,7 @@ class SearchContentRoute(CriaRoute):
             )
 
         # Now search
-        response: IndexResponse = await group.search(config)
+        response: IndexResponse = await group.search(group_name, config)
 
         # Success!
         return self.ResponseModel(

@@ -158,3 +158,14 @@ class Groups(Table):
         """
 
         return bool(await self.retrieve(name=name))
+
+    async def truncate(self) -> None:
+        """
+        Truncate the Groups table
+
+        :return: None
+
+        """
+
+        async with self.cursor() as cursor:
+            await cursor.execute("TRUNCATE TABLE `Groups`")

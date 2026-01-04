@@ -57,7 +57,13 @@ class DeleteGroupRoute(CriaRoute):
             request: Request,
             group_name: str
     ) -> ResponseModel:
-        group_id: int = await request.app.criadex.get_id(name=group_name)
+        group_id = await request.app.criadex.get_id(name=group_name, throw_not_found=False)
+        if group_id is None:
+            return self.ResponseModel(
+                code="GROUP_NOT_FOUND",
+                status=404,
+                message="The requested index group does not exist!"
+            )
         await request.app.auth.group_authorizations.delete_all_by_group_id(group_id=group_id)
 
         await request.app.criadex.delete(name=group_name)

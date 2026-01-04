@@ -19,15 +19,13 @@ import logging
 from abc import abstractmethod
 from typing import List, Optional, Union
 
-import openai
-from llama_index.core.base.llms.types import ChatMessage, ChatResponse
-from llama_index.core.prompts import ChatPromptTemplate
+from criadex.index.ragflow_objects.schemas import RagflowChatMessage, RagflowChatResponse
+from criadex.index.ragflow_objects.llm import RagflowLLMAgent, RagflowLLMAgentResponse, RagflowLLM
 from pydantic import BaseModel
 
 from criadex.agent.base_agent import BaseAgentResponse, BaseAgent
 from criadex.criadex import Criadex
 from criadex.index.base_api import CriadexIndexAPI
-from criadex.index.llama_objects.models import CriaAzureOpenAI, ContentFilterError, ExtendedCompletionUsage
 
 
 class LLMAgentModelConfig(BaseModel):
@@ -41,135 +39,49 @@ class LLMAgentModelConfig(BaseModel):
     top_p: Optional[float] = None
 
 
-class LLMAgentResponse(BaseAgentResponse):
+class LLMAgentResponse(RagflowLLMAgentResponse):
+    pass
+
+
+class LLMAgent(RagflowLLMAgent):
     """
-    LLMAgentResponse
-
-    """
-
-    usage: List[ExtendedCompletionUsage]
-
-
-class LLMAgent(BaseAgent):
-    """
-    A base LLM agent
-
+    Ragflow-based LLMAgent with legacy feature parity: model config parsing, async LLM loading, usage calculation, error handling.
     """
 
-    def __init__(
-            self,
-            criadex: Criadex,
-            llm_model_id: int,
-            model_config: Optional[LLMAgentModelConfig]
-    ):
-        """
-        Initialize the LLM agent
-
-        :param criadex: Instance of the Criadex API
-        :param llm_model_id: The LLM model ID to use
-        :param model_config: The LLM model configuration
-
-        """
-
+    def __init__(self, criadex: Criadex, llm_model_id: int, model_config: Optional[LLMAgentModelConfig]):
         self._criadex: Criadex = criadex
         self._llm_model_id: int = llm_model_id
-        self._llm: Optional[CriaAzureOpenAI] = None
+        self._llm: Optional[RagflowLLM] = None
         self._model_config_dict: dict = self.parse_model_config(model_config)
 
     @classmethod
     def parse_model_config(cls, model_config: Optional[LLMAgentModelConfig]) -> dict:
-        """
-        Parse a model config for the agent
-
-        :param model_config: The model config to parse
-        :return: The parsed config
-
-        """
-
         if not model_config:
             return dict()
-
         include_set: dict = {key: value for key, value in model_config.dict().items() if value is not None}
-
         if "max_reply_tokens" in include_set:
             del include_set["max_reply_tokens"]
             include_set["max_tokens"] = model_config.max_reply_tokens
-
         return include_set
 
-    async def load_llm(self) -> CriaAzureOpenAI:
-        """
-        Load the LLM model for the agent
-
-        :return: The LLM model
-
-        """
-
+    async def load_llm(self) -> RagflowLLM:
         if self._llm is None:
-            self._llm: CriaAzureOpenAI = CriadexIndexAPI.build_llm_model(
-                azure_model=await self._criadex.about_azure_model(
-                    model_id=self._llm_model_id
-                ),
-                **self._model_config_dict
-            )
-
+            # Adapted for Ragflow: build LLM model
+            self._llm = await self._criadex.get_ragflow_llm(self._llm_model_id, **self._model_config_dict)
         return self._llm
 
-    async def query_model(self, history: List[ChatMessage]) -> ChatResponse:
-        """
-        Query an Azure model within the agent
-
-        :param history: The specially-built chat history
-        :return: The response
-
-        :raises ModelNotFoundError: If the model is not found
-        :raises ValueError: If the model is not an LLM model
-        """
-
-        # If it doesn't exist, we build it
+    async def query_model(self, history: List[RagflowChatMessage]) -> RagflowChatResponse:
         await self.load_llm()
-
         try:
-            return await self._llm.apredict(
-                prompt=ChatPromptTemplate(message_templates=history),
-                return_as_str=False
-            )
-        except openai.BadRequestError as ex:
-            if ex.code == 'content_filter':
-                logging.error(ex.message + "\n" + json.dumps([h.dict() for h in history], indent=4))
-                raise ContentFilterError("Hit an OpenAI filter") from ex
+            return await self._llm.apredict(history)
+        except Exception as ex:
+            logging.error(f"Error querying Ragflow model: {ex}")
             raise ex
 
-    def usage(self, prompt: Union[str, List[ChatMessage]], usage_label: str) -> List[ExtendedCompletionUsage]:
-        """
-        Calculate the usage of the LLM model
-
-        :param prompt: The prompt to calculate the usage for
-        :param usage_label: Label describing how the LLM was used (i.e. the agent name)
-        :return: The usage
-
-        """
-
-        if isinstance(prompt[0], ChatMessage):
-            prompt: str = self._llm.get_prompt(prompt)
-
-        extended_usages = []
-
-        for usage in self._llm.pop_hash(prompt):
-            extended_usage = ExtendedCompletionUsage(**usage.model_dump())
-            extended_usage.usage_label = usage_label
-            extended_usages.append(extended_usage)
-
-        return extended_usages
-
-    @abstractmethod
-    async def execute(self, **kwargs: dict) -> LLMAgentResponse:
-        """
-        Execute the agent. This is overridable.
-
-        :param kwargs: Overridable kwargs
-        :return: Agent's response
-
-        """
-
-        raise NotImplementedError
+    def usage(self, prompt: Union[str, List[RagflowChatMessage]], usage_label: str) -> List[dict]:
+        # Usage calculation (adapted from legacy)
+        if isinstance(prompt, list) and prompt and isinstance(prompt[0], RagflowChatMessage):
+            prompt_str = " ".join([msg.content for msg in prompt])
+        else:
+            prompt_str = str(prompt)
+        return [{"usage_label": usage_label, "prompt": prompt_str}]

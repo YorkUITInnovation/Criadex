@@ -20,7 +20,7 @@ from app.core.security import get_api_key_master
 from app.core import config
 from app.core.schemas import AppMode
 from app.core.route import CriaRouter
-from . import about, create, delete
+from . import about, create, delete, query
 
 router = CriaRouter(
     tags=["Group Management"],
@@ -30,7 +30,8 @@ router = CriaRouter(
 router.include_views(
     create.view,
     delete.view,
-    about.view
+    about.view,
+    query.view
 )
 
 __all__ = ["router"]

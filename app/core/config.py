@@ -20,10 +20,10 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-from criadex.schemas import QdrantCredentials, MySQLCredentials
+from criadex.schemas import ElasticsearchCredentials, MySQLCredentials
 from .schemas import AppMode, check_env_path
 
-ENV_PATH: str = os.environ.get('ENV_PATH', "../.env")
+ENV_PATH: str = os.environ.get('ENV_PATH', ".env")
 ENV_LOADED: bool = load_dotenv(dotenv_path=check_env_path(ENV_PATH))
 
 APP_MODE: AppMode = AppMode[os.environ.get('APP_API_MODE', AppMode.TESTING.name)]
@@ -55,17 +55,18 @@ A semantic search engine developed by [UIT Innovation](https://github.com/YorkUI
 """
 
 # Vector DB Config
-QDRANT_CREDENTIALS: QdrantCredentials = QdrantCredentials(
-    host=os.environ["QDRANT_HOST"],
-    port=os.environ["QDRANT_PORT"],
-    grpc_port=os.environ["QDRANT_GRPC_PORT"],
-    api_key=os.environ.get("QDRANT_API_KEY")
+ELASTICSEARCH_CREDENTIALS: ElasticsearchCredentials = ElasticsearchCredentials(
+    host=os.environ["ELASTICSEARCH_HOST"],
+    port=int(os.environ["ELASTICSEARCH_PORT"]),
+    api_key=os.environ.get("ELASTICSEARCH_API_KEY"),
+    username=os.environ.get("ELASTICSEARCH_USERNAME"),
+    password=os.environ.get("ELASTICSEARCH_PASSWORD")
 )
 
 # MySQL Config
 MYSQL_CREDENTIALS: MySQLCredentials = MySQLCredentials(
     host=os.environ["MYSQL_HOST"],
-    port=os.environ["MYSQL_PORT"],
+    port=int(os.environ["MYSQL_PORT"]),
     username=os.environ["MYSQL_USERNAME"],
     database=os.environ["MYSQL_DATABASE"],
     password=os.environ.get("MYSQL_PASSWORD"),

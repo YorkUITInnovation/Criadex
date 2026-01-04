@@ -1,4 +1,4 @@
-USE criadex;
+
 
 
 CREATE TABLE IF NOT EXISTS `AzureModels`
@@ -29,7 +29,6 @@ CREATE TABLE IF NOT EXISTS `Groups`
     `llm_model_id`       INT          NOT NULL,
     `embedding_model_id` INT          NOT NULL,
     `rerank_model_id`    INT          NOT NULL,
-    UNIQUE (`name`),
     FOREIGN KEY (llm_model_id) REFERENCES AzureModels (id),
     FOREIGN KEY (embedding_model_id) REFERENCES AzureModels (id),
     FOREIGN KEY (rerank_model_id) REFERENCES CohereModels (id)
@@ -58,4 +57,3 @@ CREATE TABLE IF NOT EXISTS `Assets`
     FOREIGN KEY (document_id) REFERENCES `Documents` (id),
     FOREIGN KEY (group_id) REFERENCES `Groups` (id)
 );
-
