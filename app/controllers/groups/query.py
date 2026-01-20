@@ -5,12 +5,16 @@ from app.controllers.schemas import APIResponse, SUCCESS, ERROR, GROUP_NOT_FOUND
 from app.core.route import CriaRoute
 from criadex.schemas import GroupNotFoundError
 from criadex.index.schemas import SearchConfig, IndexResponse, TextNodeWithScore, Asset
+from pydantic import Field
 
 view = APIRouter()
 
 
 class GroupQueryResponse(APIResponse, IndexResponse):
     code: Union[SUCCESS, GROUP_NOT_FOUND, ERROR]
+    nodes: List[TextNodeWithScore] = Field(default_factory=list)
+    assets: List[Asset] = Field(default_factory=list)
+    search_units: int = 0
 
 
 @cbv(view)
