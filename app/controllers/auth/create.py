@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License along with Cri
 
 from typing import Optional, Union
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Security
 from fastapi_utils.cbv import cbv
 from pydantic import BaseModel
 from starlette.requests import Request
@@ -26,6 +26,7 @@ from app.controllers.schemas import catch_exceptions, SUCCESS, DUPLICATE, ERROR
 from app.core.database.api import AuthDatabaseAPI
 from app.core.database.tables.auth import AuthorizationsModel
 from app.core.route import CriaRoute
+from app.core.security import get_api_key_master
 
 view = APIRouter()
 
@@ -56,7 +57,8 @@ class CreateAuthRoute(CriaRoute):
             self,
             request: Request,
             api_key: str,
-            key_config: AuthKeyConfig
+            key_config: AuthKeyConfig,
+            _master_key: str = Security(get_api_key_master)
     ) -> ResponseModel:
         # Retrieve
         database: AuthDatabaseAPI = request.app.auth
