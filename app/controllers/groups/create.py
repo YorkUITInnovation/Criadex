@@ -56,23 +56,32 @@ class CreateGroupRoute(CriaRoute):
         config: GroupConfig = GroupConfig(**group_config.model_dump(), **{"name": group_name})
         criadex: Criadex = request.app.criadex
 
-        # Confirm the LLM model exists!
-        # if not await criadex.exists_azure_model(model_id=config.llm_model_id):
-        #     return self.ResponseModel(
-        #         code="INVALID_MODEL",
-        #         status=400,
-        #         message="The specified LLM model is invalid and does not exist in the database!",
-        #         config=config
-        #     )
+        # Confirm the LLM model exists (Azure Models)!
+        if not await criadex.exists_azure_model(model_id=config.llm_model_id):
+            return self.ResponseModel(
+                code="INVALID_MODEL",
+                status=400,
+                message=f"The specified LLM model (ID: {config.llm_model_id}) is invalid and does not exist in the database!",
+                config=config
+            )
 
-        # Confirm the Embedding model exists!
-        # if not await criadex.exists_azure_model(model_id=config.embedding_model_id):
-        #     return self.ResponseModel(
-        #         code="INVALID_MODEL",
-        #         status=400,
-        #         message="The specified embedding model is invalid and does not exist in the database!",
-        #         config=config
-        #     )
+        # Confirm the Embedding model exists (Azure Models)!
+        if not await criadex.exists_azure_model(model_id=config.embedding_model_id):
+            return self.ResponseModel(
+                code="INVALID_MODEL",
+                status=400,
+                message=f"The specified embedding model (ID: {config.embedding_model_id}) is invalid and does not exist in the database!",
+                config=config
+            )
+
+        # Confirm the Rerank model exists (Cohere Models)!
+        if not await criadex.exists_cohere_model(model_id=config.rerank_model_id):
+            return self.ResponseModel(
+                code="INVALID_MODEL",
+                status=400,
+                message=f"The specified rerank model (ID: {config.rerank_model_id}) is invalid and does not exist in the database!",
+                config=config
+            )
 
         # Try to create it
         try:

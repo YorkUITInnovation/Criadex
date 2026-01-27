@@ -69,7 +69,7 @@ class APIResponse(BaseModel):
             404: 'Womp womp. Not found!'
         }.get(self.status)
 
-        data: dict = super().dict(*args, **kwargs)
+        data: dict = super().model_dump(*args, **kwargs)
 
         if "error" in data and data["error"] is None:
             del data["error"]

@@ -97,3 +97,58 @@ async def test_auth_keys_endpoint_positive(
     json_response: Response = client.delete(f"/auth/{test_key}/delete", headers=sample_master_headers)
     response: AuthDeleteResponse = assert_response_shape(json_response.json(), require_status=200, require_code="SUCCESS", custom_shape=AuthDeleteResponse)
     assert response.api_key == test_key
+
+
+@pytest.mark.asyncio
+async def test_auth_negative_duplicate_key(
+        client: CriaTestClient,
+        sample_master_headers: dict
+) -> None:
+    """Test that creating a duplicate API key fails."""
+    test_key: str = "test-duplicate-" + str(uuid.uuid4())
+    create_payload = {"master": False}
+
+    json_response: Response = client.post(f"/auth/{test_key}/create", json=create_payload, headers=sample_master_headers)
+    response: AuthCreateResponse = assert_response_shape(json_response.json(), require_status=200, require_code="SUCCESS", custom_shape=AuthCreateResponse)
+    assert response.api_key == test_key
+
+    json_response: Response = client.post(f"/auth/{test_key}/create", json=create_payload, headers=sample_master_headers)
+    response_data = json_response.json()
+    assert json_response.status_code == 409 or response_data.get("code") == "DUPLICATE", "Duplicate key creation should fail"
+
+    client.delete(f"/auth/{test_key}/delete", headers=sample_master_headers)
+
+
+@pytest.mark.asyncio
+async def test_auth_negative_nonexistent_key(
+        client: CriaTestClient,
+        sample_master_headers: dict
+) -> None:
+    """Test that checking a non-existent API key returns authorized=False."""
+    non_existent_key: str = "test-nonexistent-" + str(uuid.uuid4())
+
+    json_response: Response = client.get(f"/auth/{non_existent_key}/check", headers=sample_master_headers)
+    response: AuthCheckResponse = assert_response_shape(json_response.json(), require_status=200, require_code="SUCCESS", custom_shape=AuthCheckResponse)
+    assert response.authorized is False, "Non-existent key should return authorized=False"
+    assert response.master is False, "Non-existent key should return master=False"
+
+
+@pytest.mark.asyncio
+async def test_auth_negative_unauthorized_access(
+        client: CriaTestClient,
+        sample_master_headers: dict
+) -> None:
+    """Test that non-master keys cannot perform master-only operations."""
+    test_key: str = "test-nonmaster-" + str(uuid.uuid4())
+    create_payload = {"master": False}
+
+    json_response: Response = client.post(f"/auth/{test_key}/create", json=create_payload, headers=sample_master_headers)
+    response: AuthCreateResponse = assert_response_shape(json_response.json(), require_status=200, require_code="SUCCESS", custom_shape=AuthCreateResponse)
+    assert response.master is False
+
+    non_master_headers = {"x-api-key": test_key}
+
+    json_response: Response = client.post(f"/auth/another-key/create", json=create_payload, headers=non_master_headers)
+    assert json_response.status_code == 401, "Non-master key should not be able to create other keys"
+
+    client.delete(f"/auth/{test_key}/delete", headers=sample_master_headers)

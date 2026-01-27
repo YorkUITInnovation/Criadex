@@ -412,6 +412,15 @@ class Criadex:
         """
         return await self.mysql_api.azure_models.exists(model_id=model_id)
 
+    async def exists_cohere_model(self, model_id: int) -> bool:
+        """
+        Check if a Cohere model exists by ID.
+        
+        :param model_id: The model ID
+        :return: Whether the model exists
+        """
+        return await self.mysql_api.cohere_models.exists(model_id=model_id)
+
     async def about_azure_model(self, model_id: int) -> AzureModelsModel:
         """
         Retrieve an Azure model by ID or raise if not found.
