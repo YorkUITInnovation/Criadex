@@ -152,13 +152,18 @@ class Criadex:
         )
 
         # Vector store index creation is often implicit on first insert.
-        # This block is for safety and future explicit index creation logic.
+        # If Elasticsearch is temporarily unavailable, we keep the MySQL
+        # group so upstream services (e.g., CriaParse) can still rely on
+        # the group existing and retry ES operations later.
         try:
             await self.vector_store.acreate_collection(collection_name=config.name)
         except Exception as ex:
-            # If vector store operations fail, roll back the MySQL insertion.
-            await self.mysql_api.groups.delete(name=config.name)
-            raise ex
+            logging.warning(
+                "Criadex: failed to create Elasticsearch index for group '%s': %s. "
+                "Keeping MySQL group so dependent services can continue.",
+                config.name,
+                ex,
+            )
 
     async def about(self, name: str) -> GroupsModel:
         """
