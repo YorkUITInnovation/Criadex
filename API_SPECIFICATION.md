@@ -701,18 +701,23 @@ POST /models/{model_id}/rerank
 
 #### 6.1.1 Chat
 POST /models/ragflow/{model_id}/agents/chat
-- Description: Chat with a Ragflow model.
+- Description: Chat with a Ragflow model. Uses the server-side `RAGFLOW_API_KEY` and requires a `chat_id`.
 - Path Parameters:
-  - `model_id` (int, required): The ID of the model.
-- Request Body:
+  - `model_id` (int or string, required): The ID of the model.
+- Request Body (`ChatAgentRequest`):
   ```json
   {
-    "prompt": "hi"
+    "chat_id": "your-chat-id",
+    "prompt": "hi",
+    "history": []
   }
   ```
 - Response 200 OK:
   ```json
   {
+    "code": "SUCCESS",
+    "status": 200,
+    "message": "Chat completed successfully",
     "agent_response": {
       "chat_response": {
         "message": {
@@ -720,26 +725,19 @@ POST /models/ragflow/{model_id}/agents/chat
           "blocks": [
             {
               "block_type": "text",
-              "text": "Error: Invalid response from Ragflow API."
+              "text": "Hello!"
             }
           ],
           "additional_kwargs": {},
           "metadata": {}
         },
-        "raw": {
-          "code": 100,
-          "data": null,
-          "message": "<NotFound '404: Not Found'>"
-        }
+        "raw": {}
       },
       "usage": {
         "prompt_tokens": 1,
-        "completion_tokens": 9,
-        "total_tokens": 10,
-        "label": "ChatAgent"
-      },
-      "message": "Successfully queried the model!",
-      "model_id": 1
+        "completion_tokens": 1,
+        "total_tokens": 2
+      }
     }
   }
   ```
@@ -831,15 +829,6 @@ POST /models/ragflow/{model_id}/agents/transform
     "transformed_text": "CHANGE"
   }
   ```
-
----
-
-## 5. Model Management
-
-### 5.1 Azure Models
-
-#### 5.1.1 Create Azure Model
-POST /models/azure/create
 - Description: Add an Azure OpenAI model config to the database.
 - Request Body (`AzureModelsBaseModel`):
   ```json

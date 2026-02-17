@@ -792,13 +792,18 @@ curl -X POST "${HOST}:${PORT}/models/ragflow/1/agents/chat" \
   -H "Content-Type: application/json" \
   -H "x-api-key: ${API_KEY}" \
   -d '{
-    "prompt": "hi"
+    "chat_id": "your-chat-id",
+    "prompt": "hi",
+    "history": []
   }'
 ```
 
 Response (200 OK):
 ```json
 {
+  "code": "SUCCESS",
+  "status": 200,
+  "message": "Chat completed successfully",
   "agent_response": {
     "chat_response": {
       "message": {
@@ -806,26 +811,19 @@ Response (200 OK):
         "blocks": [
           {
             "block_type": "text",
-            "text": "Error: Invalid response from Ragflow API."
+            "text": "Hello!"
           }
         ],
         "additional_kwargs": {},
         "metadata": {}
       },
-      "raw": {
-        "code": 100,
-        "data": null,
-        "message": "<NotFound '404: Not Found'>"
-      }
+      "raw": {}
     },
     "usage": {
       "prompt_tokens": 1,
-      "completion_tokens": 9,
-      "total_tokens": 10,
-      "label": "ChatAgent"
-    },
-    "message": "Successfully queried the model!",
-    "model_id": 1
+      "completion_tokens": 1,
+      "total_tokens": 2
+    }
   }
 }
 ```
