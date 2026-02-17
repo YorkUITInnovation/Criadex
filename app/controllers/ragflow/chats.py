@@ -50,11 +50,11 @@ class RagflowChatsRoute(CriaRoute):
             )
             
             return self.ResponseModel(
-                code=SUCCESS,
+                code="SUCCESS",
                 status=200,
                 message="Dialog ensured successfully" if success else "Failed to ensure dialog",
                 chat_id=chat_id,
-                created=True
+                created=success
             )
         except Exception as e:
             return self.ResponseModel(
