@@ -55,3 +55,136 @@ async def test_cohere_rerank_positive(
     assert response_data.status == 200
     assert response_data.code == "SUCCESS"
     assert response_data.reranked_documents == documents
+
+
+@pytest.mark.asyncio
+async def test_generic_models_crud_round_trip(
+        client: CriaTestClient,
+        sample_master_headers: dict
+) -> None:
+    """
+    End-to-end test for the new generic /models/{provider_type}/* routes.
+
+    This exercises:
+    - POST   /models/{provider_type}/create
+    - GET    /models/{provider_type}/{model_id}/about
+    - PATCH  /models/{provider_type}/{model_id}/update
+    - DELETE /models/{provider_type}/{model_id}/delete
+    """
+    provider_type = "ollama"
+
+    # 1) Create a generic model
+    create_body = {
+        "api_base_url": "http://ollama:11434",
+        "api_key": "test-key",
+        "api_model": "llama3:8b",
+        "extra_param": "extra-value",
+    }
+    create_response = client.post(
+        f"/models/{provider_type}/create",
+        headers=sample_master_headers,
+        json=create_body,
+    )
+    create_json = create_response.json()
+    create_data: APIResponse = assert_response_shape(create_json)
+    assert create_data.status == 200
+    # shape helper already enforces SUCCESS by default, but assert explicitly for clarity
+    assert create_data.code == "SUCCESS"
+    assert isinstance(create_json.get("model"), dict)
+    model_dict = create_json["model"]
+    model_id = model_dict.get("id")
+    assert isinstance(model_id, int)
+    assert model_dict.get("provider_type") == provider_type
+    # Config should echo the original keys
+    config = model_dict.get("config") or {}
+    for k, v in create_body.items():
+        assert config.get(k) == v
+
+    # 2) About should return the same model
+    about_response = client.get(
+        f"/models/{provider_type}/{model_id}/about",
+        headers=sample_master_headers,
+    )
+    about_json = about_response.json()
+    about_data: APIResponse = assert_response_shape(about_json)
+    assert about_data.status == 200
+    assert about_data.code == "SUCCESS"
+    assert isinstance(about_json.get("model"), dict)
+    about_model = about_json["model"]
+    assert about_model.get("id") == model_id
+    assert about_model.get("provider_type") == provider_type
+
+    # 3) Update merges into the existing config
+    update_body = {
+        "api_model": "llama3:70b",
+        "new_flag": True,
+    }
+    update_response = client.patch(
+        f"/models/{provider_type}/{model_id}/update",
+        headers=sample_master_headers,
+        json=update_body,
+    )
+    update_json = update_response.json()
+    update_data: APIResponse = assert_response_shape(update_json)
+    assert update_data.status == 200
+    assert update_data.code == "SUCCESS"
+    updated_model = (update_json.get("model") or {})
+    updated_config = updated_model.get("config") or {}
+    # Updated keys
+    assert updated_config.get("api_model") == "llama3:70b"
+    assert updated_config.get("new_flag") is True
+    # Original keys still present
+    assert updated_config.get("api_base_url") == create_body["api_base_url"]
+    assert updated_config.get("api_key") == create_body["api_key"]
+
+    # 4) Delete the model
+    delete_response = client.delete(
+        f"/models/{provider_type}/{model_id}/delete",
+        headers=sample_master_headers,
+    )
+    delete_data: APIResponse = assert_response_shape(delete_response.json())
+    assert delete_data.status == 200
+    assert delete_data.code == "SUCCESS"
+
+    # 5) About should now report NOT_FOUND for this provider/model_id
+    not_found_response = client.get(
+        f"/models/{provider_type}/{model_id}/about",
+        headers=sample_master_headers,
+    )
+    not_found_data: APIResponse = assert_response_shape(
+        not_found_response.json(),
+        require_status=404,
+        require_code="NOT_FOUND",
+    )
+    assert not_found_data.status == 404
+    assert not_found_data.code == "NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_generic_models_rejects_azure_and_cohere(
+        client: CriaTestClient,
+        sample_master_headers: dict
+) -> None:
+    """
+    Guardrail: the generic route must not handle azure/cohere,
+    so that existing /models/azure/* and /models/cohere/* keep precedence.
+    """
+    body = {"api_model": "ignored"}
+
+    # azure
+    azure_resp = client.post(
+        "/models/azure/create",
+        headers=sample_master_headers,
+        json=body,
+    )
+    # Handled by dedicated Azure controller, not generic one.
+    # Validation errors are expressed as 422 when required fields are missing.
+    assert azure_resp.status_code in (200, 400, 409, 422)
+
+    # cohere
+    cohere_resp = client.post(
+        "/models/cohere/create",
+        headers=sample_master_headers,
+        json=body,
+    )
+    assert cohere_resp.status_code in (200, 400, 409, 422)

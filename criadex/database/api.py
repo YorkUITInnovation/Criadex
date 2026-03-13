@@ -23,6 +23,7 @@ from criadex.database.schemas import BaseDatabaseAPI
 from criadex.database.tables.assets import Assets
 from criadex.database.tables.models.azure import AzureModels
 from criadex.database.tables.models.cohere import CohereModels
+from criadex.database.tables.models.generic import GenericModels
 from criadex.database.tables.documents import Documents
 from criadex.database.tables.groups import Groups
 
@@ -53,6 +54,7 @@ class GroupDatabaseAPI(BaseDatabaseAPI):
         self.groups: Groups = Groups(pool)
         self.azure_models: AzureModels = AzureModels(pool)
         self.cohere_models: CohereModels = CohereModels(pool)
+        self.generic_models: GenericModels = GenericModels(pool)
 
     async def initialize(self) -> None:
         """
