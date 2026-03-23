@@ -15,6 +15,7 @@ You should have received a copy of the GNU General Public License along with Cri
 """
 
 from typing import Optional, Type, Literal
+from urllib.parse import urlparse
 
 
 from criadex.database.schemas import TableModel, Table
@@ -74,13 +75,24 @@ class AzureModelsModel(AzureModelsBaseModel):
     @property
     def api_base(self) -> str:
         """
-        API base URL (built from the api_resource)
+        API base URL.
+
+        Backward-compatible behavior:
+        - If api_resource is a full URL, return it as the endpoint base.
+        - Otherwise treat api_resource as a legacy Azure resource name.
 
         :return: Base URL
 
         """
+        api_resource = (self.api_resource or "").strip()
+        if not api_resource:
+            return ""
 
-        return f"https://{self.api_resource}.openai.azure.com"
+        parsed = urlparse(api_resource)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            return api_resource.rstrip("/")
+
+        return f"https://{api_resource}.openai.azure.com"
 
     @property
     def additional_kwargs(self) -> dict:

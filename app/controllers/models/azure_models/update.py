@@ -60,7 +60,7 @@ class UpdateAzureModelRoute(CriaRoute):
         ResponseModel(
             code="DUPLICATE",
             status=409,
-            message="Error updating, the new deployment already exists in the database with that Azure resource!",
+            message="Error updating, the new deployment already exists in the database with that Azure endpoint/resource value!",
             model=None
         )
     )
@@ -73,14 +73,15 @@ class UpdateAzureModelRoute(CriaRoute):
         # Get model
         model: AzureModelsModel = await request.app.criadex.about_azure_model(model_id=model_id)
 
-        # Update only provided fields to avoid overwriting with None
-        if model_config.api_key is not None:
+        # Update only explicitly provided fields.
+        provided_fields = model_config.model_fields_set
+        if "api_key" in provided_fields:
             model.api_key = model_config.api_key
-        if model_config.api_deployment is not None:
+        if "api_deployment" in provided_fields:
             model.api_deployment = model_config.api_deployment
-        if model_config.api_version is not None:
+        if "api_version" in provided_fields:
             model.api_version = model_config.api_version
-        if model_config.api_resource is not None:
+        if "api_resource" in provided_fields:
             model.api_resource = model_config.api_resource
 
         # Update DB
