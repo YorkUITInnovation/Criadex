@@ -143,13 +143,19 @@ class Criadex:
             raise GroupExistsError()
 
         # MySQL Insert
-        await self.mysql_api.groups.insert(
-            name=config.name,
-            type=IndexType[config.type].value,
-            llm_model_id=config.llm_model_id,
-            embedding_model_id=config.embedding_model_id,
-            rerank_model_id=config.rerank_model_id
-        )
+        try:
+            await self.mysql_api.groups.insert(
+                name=config.name,
+                type=IndexType[config.type].value,
+                llm_model_id=config.llm_model_id,
+                embedding_model_id=config.embedding_model_id,
+                rerank_model_id=config.rerank_model_id
+            )
+        except Exception as ex:
+            message = str(ex).lower()
+            if "duplicate entry" in message or "1062" in message:
+                raise GroupExistsError() from ex
+            raise
 
         # Vector store index creation is often implicit on first insert.
         # If Elasticsearch is temporarily unavailable, we keep the MySQL
