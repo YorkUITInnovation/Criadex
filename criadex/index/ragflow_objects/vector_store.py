@@ -47,6 +47,8 @@ class RagflowVectorStore:
                         "properties": {
                             "metadata": {
                                 "properties": {
+                                    "group_name": {"type": "keyword"},
+                                    "group_id": {"type": "keyword"},
                                     "file_name": {"type": "keyword"},
                                     "updated_at": {"type": "date"},
                                     "update_id": {"type": "keyword"}
@@ -138,23 +140,51 @@ class RagflowVectorStore:
             return query
         return self.merge_filters(query, extra_filter)
 
+    def _normalize_metadata_filter(self, query_filter: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize app-level filters into proper Elasticsearch bool query clauses.
+
+        Supports:
+        - {"must": {k: v, ...}, "should": [{k: v}, ...]}
+        - {"bool": {...}} (passed through)
+        """
+        if not query_filter:
+            return {"bool": {"filter": [{"match_all": {}}]}}
+
+        if "bool" in query_filter:
+            return query_filter
+
+        must = query_filter.get("must") or {}
+        should = query_filter.get("should") or []
+
+        must_clauses: list[dict] = []
+        for key, value in must.items():
+            must_clauses.append({"term": {f"metadata.{key}": value}})
+
+        should_clauses: list[dict] = []
+        if isinstance(should, list):
+            for cond in should:
+                if not isinstance(cond, dict) or not cond:
+                    continue
+                k, v = next(iter(cond.items()))
+                should_clauses.append({"term": {f"metadata.{k}": v}})
+
+        bool_query: dict = {"filter": must_clauses or [{"match_all": {}}]}
+        if should_clauses:
+            bool_query["should"] = should_clauses
+            bool_query["minimum_should_match"] = 1
+
+        return {"bool": bool_query}
+
     def search(self, collection_name, query_embedding, top_k=10, query_filter=None, sort=None):
-        # Build the filter clauses
-        filters_to_merge = []
+        normalized = self._normalize_metadata_filter(query_filter or {})
 
-        # Add user-provided query filter
-        if query_filter:
-            filters_to_merge.append(query_filter)
-
-        merged_filter_clauses = self.merge_filters(*filters_to_merge)
-        
-        # Construct the main query using function_score
+        # Construct the main query using function_score.
+        # NOTE: bool.filter is AND; group OR semantics are handled via bool.should + minimum_should_match.
         main_query = {
             "function_score": {
                 "query": {
-                    "bool": {
-                        "filter": merged_filter_clauses if merged_filter_clauses else [{"match_all": {}}]
-                    }
+                    "bool": normalized["bool"]
                 },
                 "functions": [
                     {
@@ -171,12 +201,14 @@ class RagflowVectorStore:
         }
         
 
-        # Always sort by updated_at descending to get the latest node first
         search_kwargs = {
             "index": collection_name, # Use collection_name as the index
             "query": main_query,
             "size": top_k,
-            "sort": [{"metadata.updated_at": {"order": "desc"}}],
+            "sort": [
+                {"_score": {"order": "desc"}},
+                {"metadata.updated_at": {"order": "desc"}},
+            ],
             "track_scores": True
         }
         

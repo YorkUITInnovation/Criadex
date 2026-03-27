@@ -14,10 +14,12 @@ You should have received a copy of the GNU General Public License along with Cri
 
 """
 
+import asyncio
 import logging
 from typing import Optional, Literal
 
 from fastapi import APIRouter, Header, Depends
+from starlette.requests import Request
 from starlette.responses import Response
 
 from app.controllers import agents, docs, auth, content, group_auth, models, groups, ragflow
@@ -52,12 +54,29 @@ logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
 
 
 @router.get(HealthCheckFilter.HEALTH_ENDPOINT, include_in_schema=False)
-async def health_check() -> Response:
+async def health_check(request: Request) -> Response:
     """
-    Check if the server is online (for docker health check)
-    :return: Just a simple 200
+    Check if the API and backing dependencies are ready for real requests.
 
     """
+    vector_store = getattr(request.app.criadex, "vector_store", None)
+    es_client = getattr(vector_store, "es", None)
+    if es_client is None:
+        return Response(status_code=503, content="Elasticsearch client unavailable")
+
+    def check_es_ready() -> bool:
+        if not es_client.ping():
+            return False
+        health = es_client.cluster.health(wait_for_status="yellow", timeout="1s")
+        return health.get("status") in {"yellow", "green"} and not health.get("timed_out", False)
+
+    try:
+        ready = await asyncio.get_running_loop().run_in_executor(None, check_es_ready)
+    except Exception:
+        return Response(status_code=503, content="Elasticsearch not ready")
+
+    if not ready:
+        return Response(status_code=503, content="Elasticsearch not ready")
 
     return Response(status_code=200, content="Pong!")
 

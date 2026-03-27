@@ -76,32 +76,39 @@ def pytest_configure(config):
 
         # Apply sorting
         if sort:
-            # Assuming sort is a list of dictionaries, e.g., [{"metadata.updated_at": {"order": "desc"}}]
-            # Or a dictionary like {"metadata.updated_at": {"order": "desc"}}
-            # Let's handle both cases.
-            if isinstance(sort, list) and len(sort) > 0:
-                sort_criteria = sort[0]
-            elif isinstance(sort, dict):
+            if isinstance(sort, list):
                 sort_criteria = sort
+            elif isinstance(sort, dict):
+                sort_criteria = [sort]
             else:
-                sort_criteria = None
+                sort_criteria = []
 
-            if sort_criteria:
-                sort_field = list(sort_criteria.keys())[0] # e.g., "metadata.updated_at"
-                sort_order = sort_criteria[sort_field]["order"] # e.g., "desc"
+            def get_sort_value(hit, field_path):
+                if field_path == "_score":
+                    return hit.get("_score", 0.0)
 
-                # Extract nested field for sorting
-                def get_sort_value(hit, field_path):
-                    parts = field_path.split('.')
-                    value = hit['_source']
-                    for part in parts:
-                        value = value.get(part)
-                        if value is None:
-                            return None # Handle missing nested fields
+                parts = field_path.split('.')
+                value = hit['_source']
+                for part in parts:
+                    if not isinstance(value, dict):
+                        return None
+                    value = value.get(part)
+                    if value is None:
+                        return None
+                return value
+
+            for criterion in reversed(sort_criteria):
+                sort_field = list(criterion.keys())[0]
+                sort_order = criterion[sort_field]["order"]
+
+                def normalize_sort_value(hit):
+                    value = get_sort_value(hit, sort_field)
+                    if value is None:
+                        return 0 if sort_order == "desc" else float("inf")
                     return value
 
                 all_docs.sort(
-                    key=lambda hit: get_sort_value(hit, sort_field),
+                    key=normalize_sort_value,
                     reverse=(sort_order == "desc")
                 )
         
@@ -332,7 +339,14 @@ async def setup_database():
                     await cursor.execute(statement)
 
     yield
-    # Connection will be closed by the event_loop fixture's cleanup
+    try:
+        if hasattr(conn, "closed") and not conn.closed:
+            if hasattr(conn, "ensure_closed"):
+                await conn.ensure_closed()
+            else:
+                conn.close()
+    except Exception:
+        pass
 
 
 @pytest_asyncio.fixture(scope="session")
@@ -352,6 +366,14 @@ async def db_connection(setup_database):
     )
     _active_aiomysql_connections.append(conn)
     yield conn
+    try:
+        if hasattr(conn, 'closed') and not conn.closed:
+            if hasattr(conn, 'ensure_closed'):
+                await conn.ensure_closed()
+            else:
+                conn.close()
+    except Exception:
+        pass
 
 @pytest_asyncio.fixture(scope="session")
 async def criadex_app(request, populate_models): # Add request to access config
