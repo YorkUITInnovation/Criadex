@@ -130,7 +130,7 @@ Endpoints to manage API keys.
 
 ### 2.1 Create API Key
 POST /auth/{api_key}/create
-- Description: Create an API key.
+- Description: Create an API key. Requires master key authorization.
 - Path Parameters:
   - `api_key` (string, required): The API key to create.
 - Request Body (`AuthKeyConfig`):
@@ -182,42 +182,6 @@ DELETE /auth/{api_key}/delete
     "timestamp": "<timestamp>",
     "code": "SUCCESS",
     "api_key": "reset-82fface045"
-  }
-  ```
-
-### 2.4 Validate API Key (Keys Endpoint)
-GET /auth/keys/{api_key}
-- Description: Check for an API key used to access this API. This endpoint is for compatibility with older clients.
-- Path Parameters:
-  - `api_key` (string, required): The API key to check.
-- Response 200 OK (`AuthKeysResponse`):
-  ```json
-  {
-    "status": 200,
-    "message": "Successfully completed the request!",
-    "timestamp": "<timestamp>",
-    "code": "SUCCESS",
-    "api_key": "non-master-key-name-gemini",
-    "authorized": true,
-    "master": false
-  }
-  ```
-
-### 2.5 Reset API Key
-PATCH /auth/{api_key}/reset
-- Description: Reset an API key.
-- Path Parameters:
-  - `api_key` (string, required): The API key to reset.
-- Query Parameters:
-  - `new_key` (string, required): The new API key.
-- Response 200 OK (`AuthResetResponse`):
-  ```json
-  {
-    "status": 200,
-    "message": "Successfully completed the request!",
-    "timestamp": "<timestamp>",
-    "code": "SUCCESS",
-    "new_key": "reset-82fface045"
   }
   ```
 
@@ -276,32 +240,6 @@ DELETE /group_auth/{group_name}/delete
     "message": "Successfully completed the request!",
     "timestamp": "<timestamp>",
     "code": "SUCCESS"
-  }
-  ```
-
-### 3.4 List Authorized Groups
-GET /group_auth/list
-- Description: List the groups an API key is authorized for.
-- Query Parameters:
-  - `api_key` (string, optional): The API key to check. Can also be passed in the `x-api-key` header.
-- Response 200 OK (`GroupAuthListResponse`):
-  ```json
-  {
-    "status": 200,
-    "message": "Successfully completed the request!",
-    "timestamp": "<timestamp>",
-    "code": "SUCCESS",
-    "groups": [
-      {
-        "id": 801,
-        "name": "test-group-gemini",
-        "type": 1,
-        "llm_model_id": 1,
-        "embedding_model_id": 2,
-        "rerank_model_id": 4,
-        "created": "2025-11-19T14:05:28"
-      }
-    ]
   }
   ```
 
@@ -413,48 +351,6 @@ DELETE /groups/{group_name}/content/delete
   }
   ```
 
-### 4.5 Search Content
-POST /groups/{group_name}/content/search
-- Description: Search content in a group.
-- Path Parameters:
-  - `group_name` (string, required): The name of the group.
-- Request Body (`SearchConfig`):
-  ```json
-  {
-    "query": "test"
-  }
-  ```
-- Response 200 OK (`ContentSearchResponse`):
-  ```json
-  {
-    "status": 200,
-    "message": "Successfully retrieved searched the index for the requested content.",
-    "timestamp": "<timestamp>",
-    "code": "SUCCESS",
-    "response": {
-      "nodes": [
-        {
-          "node": {
-            "metadata": {
-              "file_name": "my-test-document.json",
-              "updated_at": 1763561128810
-            },
-            "excluded_embed_metadata_keys": [],
-            "excluded_llm_metadata_keys": [],
-            "class_name": "TextNode",
-            "text": "updated",
-            "text_template": "{}",
-            "metadata_template": "{}"
-          },
-          "score": 0.0
-        }
-      ],
-      "assets": [],
-      "search_units": 1
-    }
-  }
-  ```
-
 ---
 
 ## 5. Model Management
@@ -468,12 +364,13 @@ POST /models/azure/create
   ```json
   {
     "api_model": "text-embedding-ada-002",
-    "api_resource": "your-resource",
+    "api_resource": "your-resource-name",
     "api_version": "2023-05-15",
-    "api_key": "your-controllers-key",
+    "api_key": "your-key",
     "api_deployment": "your-deployment-name"
   }
   ```
+  Note: `api_resource` can be the resource name or the full Azure endpoint URL.
 - Response 200 OK (`AzureModelCreateResponse`):
   ```json
   {
@@ -523,9 +420,9 @@ PATCH /models/azure/{model_id}/update
 - Request Body (`AzureModelsPartialBaseModel`):
   ```json
   {
-    "api_resource": "your-resource",
+    "api_resource": "https://new-resource.openai.azure.com/",
     "api_version": "2023-05-15",
-    "api_key": "your-controllers-key",
+    "api_key": "your-key",
     "api_deployment": "your-deployment-name"
   }
   ```
@@ -537,7 +434,7 @@ PATCH /models/azure/{model_id}/update
     "timestamp": "<timestamp>",
     "code": "SUCCESS",
     "model": {
-      "api_resource": "your-resource",
+      "api_resource": "new-resource",
       "api_version": "2023-05-15",
       "api_key": "fake",
       "api_deployment": "your-deployment-name",
@@ -571,7 +468,7 @@ POST /models/cohere/create
   ```json
   {
     "api_model": "rerank-multilingual-v2.0",
-    "api_key": "your-controllers-key"
+    "api_key": "your-key"
   }
   ```
 - Response 200 OK (`CohereModelCreateResponse`):
@@ -617,7 +514,7 @@ PATCH /models/cohere/{model_id}/update
 - Request Body (`CohereModelsPartialBaseModel`):
   ```json
   {
-    "api_key": "your-controllers-key"
+    "api_key": "your-key"
   }
   ```
 - Response 200 OK (`CohereModelUpdateResponse`):
@@ -693,11 +590,121 @@ POST /models/{model_id}/rerank
   }
   ```
 
+### 5.3 Generic Models
+Endpoints for OpenAI-compatible generic LLM providers.
+
+#### 5.3.1 Create Generic Model
+POST /models/generic/create
+- Description: Add a generic OpenAI-compatible model config to the database.
+- Request Body (`GenericModelsBaseModel`):
+  ```json
+  {
+    "api_model": "gpt-4",
+    "api_base_url": "https://api.openai.com/v1",
+    "api_key": "your-api-key"
+  }
+  ```
+- Response 200 OK (`GenericModelCreateResponse`):
+  ```json
+  {
+    "status": 200,
+    "message": "Successfully created the model. Model ID returned in payload.",
+    "timestamp": "<timestamp>",
+    "code": "SUCCESS",
+    "model": {
+      "api_base_url": "https://api.openai.com/v1",
+      "api_key": "fake",
+      "api_model": "gpt-4",
+      "id": 20
+    }
+  }
+  ```
+
+#### 5.3.2 Get Generic Model Info
+GET /models/generic/{model_id}/about
+- Description: Retrieve information about a Generic Model.
+- Path Parameters:
+  - `model_id` (int, required): The ID of the model.
+- Response 200 OK (`GenericModelAboutResponse`):
+  ```json
+  {
+    "status": 200,
+    "message": "Successfully retrieved the model config",
+    "timestamp": "<timestamp>",
+    "code": "SUCCESS",
+    "model": {
+      "api_base_url": "https://api.openai.com/v1",
+      "api_key": "fake",
+      "api_model": "gpt-4",
+      "id": 20
+    }
+  }
+  ```
+
+#### 5.3.3 Update Generic Model
+PATCH /models/generic/{model_id}/update
+- Description: Update a Generic model config in the database.
+- Path Parameters:
+  - `model_id` (int, required): The ID of the model.
+- Request Body (`GenericModelsPartialBaseModel`):
+  ```json
+  {
+    "api_base_url": "https://api.proxy.com/v1",
+    "api_key": "new-api-key"
+  }
+  ```
+- Response 200 OK (`GenericModelUpdateResponse`):
+  ```json
+  {
+    "status": 200,
+    "message": "Successfully updated the model.",
+    "timestamp": "<timestamp>",
+    "code": "SUCCESS",
+    "model": {
+      "api_base_url": "https://api.proxy.com/v1",
+      "api_key": "fake",
+      "api_model": "gpt-4",
+      "id": 20
+    }
+  }
+  ```
+
+#### 5.3.4 Delete Generic Model
+DELETE /models/generic/{model_id}/delete
+- Description: Delete a Generic model config from the database.
+- Path Parameters:
+  - `model_id` (int, required): The ID of the model.
+- Response 200 OK (`GenericModelDeleteResponse`):
+  ```json
+  {
+    "status": 200,
+    "message": "Successfully deleted the model",
+    "timestamp": "<timestamp>",
+    "code": "SUCCESS"
+  }
+  ```
+
 ---
 
 ## 6. Agents
 
 ### 6.1 Ragflow Agents
+
+#### 6.1.0 Ensure Dialog
+POST /models/ragflow/{model_id}/dialog/ensure
+- Description: Ensure a Ragflow dialog exists for the given model. This is used to initialize the backing dialog before starting a chat.
+- Path Parameters:
+  - `model_id` (int, required): The ID of the model.
+- Response 200 OK:
+  ```json
+  {
+    "status": 200,
+    "message": "Dialog ensured successfully",
+    "timestamp": "<timestamp>",
+    "code": "SUCCESS",
+    "dialog_id": "your-dialog-id"
+  }
+  ```
 
 #### 6.1.1 Chat
 POST /models/ragflow/{model_id}/agents/chat
@@ -827,103 +834,5 @@ POST /models/ragflow/{model_id}/agents/transform
   ```json
   {
     "transformed_text": "CHANGE"
-  }
-  ```
-- Description: Add an Azure OpenAI model config to the database.
-- Request Body (`AzureModelsBaseModel`):
-  ```json
-  {
-    "api_model": "text-embedding-ada-002",
-    "api_resource": "your-resource",
-    "api_version": "2023-05-15",
-    "api_key": "your-controllers-key",
-    "api_deployment": "your-deployment-name"
-  }
-  ```
-- Response 200 OK (`AzureModelCreateResponse`):
-  ```json
-  {
-    "status": 200,
-    "message": "Successfully created the model. Model ID returned in payload.",
-    "timestamp": "<timestamp>",
-    "code": "SUCCESS",
-    "model": {
-      "api_resource": "your-resource",
-      "api_version": "2023-05-15",
-      "api_key": "fake",
-      "api_deployment": "your-deployment-name",
-      "api_model": "text-embedding-ada-002",
-      "id": 13
-    }
-  }
-  ```
-
-#### 5.1.2 Get Azure Model Info
-GET /models/azure/{model_id}/about
-- Description: Retrieve information about an Azure Model.
-- Path Parameters:
-  - `model_id` (int, required): The ID of the model.
-- Response 200 OK (`AzureModelAboutResponse`):
-  ```json
-  {
-    "status": 200,
-    "message": "Successfully retrieved the model config",
-    "timestamp": "<timestamp>",
-    "code": "SUCCESS",
-    "model": {
-      "api_resource": "your-resource",
-      "api_version": "2023-05-15",
-      "api_key": "fake",
-      "api_deployment": "your-deployment-name",
-      "api_model": "text-embedding-ada-002",
-      "id": 13
-    }
-  }
-  ```
-
-#### 5.1.3 Update Azure Model
-PATCH /models/azure/{model_id}/update
-- Description: Update an Azure OpenAI model config in the database.
-- Path Parameters:
-  - `model_id` (int, required): The ID of the model.
-- Request Body (`AzureModelsPartialBaseModel`):
-  ```json
-  {
-    "api_resource": "your-resource",
-    "api_version": "2023-05-15",
-    "api_key": "your-controllers-key",
-    "api_deployment": "your-deployment-name"
-  }
-  ```
-- Response 200 OK (`AzureModelUpdateResponse`):
-  ```json
-  {
-    "status": 200,
-    "message": "Successfully updated the model.",
-    "timestamp": "<timestamp>",
-    "code": "SUCCESS",
-    "model": {
-      "api_resource": "your-resource",
-      "api_version": "2023-05-15",
-      "api_key": "fake",
-      "api_deployment": "your-deployment-name",
-      "api_model": "text-embedding-ada-002",
-      "id": 13
-    }
-  }
-  ```
-
-#### 5.1.4 Delete Azure Model
-DELETE /models/azure/{model_id}/delete
-- Description: Delete an Azure OpenAI model config from the database.
-- Path Parameters:
-  - `model_id` (int, required): The ID of the model.
-- Response 200 OK (`AzureModelDeleteResponse`):
-  ```json
-  {
-    "status": 200,
-    "message": "Successfully deleted the model",
-    "timestamp": "<timestamp>",
-    "code": "SUCCESS"
   }
   ```
