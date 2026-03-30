@@ -143,22 +143,33 @@ class Criadex:
             raise GroupExistsError()
 
         # MySQL Insert
-        await self.mysql_api.groups.insert(
-            name=config.name,
-            type=IndexType[config.type].value,
-            llm_model_id=config.llm_model_id,
-            embedding_model_id=config.embedding_model_id,
-            rerank_model_id=config.rerank_model_id
-        )
+        try:
+            await self.mysql_api.groups.insert(
+                name=config.name,
+                type=IndexType[config.type].value,
+                llm_model_id=config.llm_model_id,
+                embedding_model_id=config.embedding_model_id,
+                rerank_model_id=config.rerank_model_id
+            )
+        except Exception as ex:
+            message = str(ex).lower()
+            if "duplicate entry" in message or "1062" in message:
+                raise GroupExistsError() from ex
+            raise
 
         # Vector store index creation is often implicit on first insert.
-        # This block is for safety and future explicit index creation logic.
+        # If Elasticsearch is temporarily unavailable, we keep the MySQL
+        # group so upstream services (e.g., CriaParse) can still rely on
+        # the group existing and retry ES operations later.
         try:
             await self.vector_store.acreate_collection(collection_name=config.name)
         except Exception as ex:
-            # If vector store operations fail, roll back the MySQL insertion.
-            await self.mysql_api.groups.delete(name=config.name)
-            raise ex
+            logging.warning(
+                "Criadex: failed to create Elasticsearch index for group '%s': %s. "
+                "Keeping MySQL group so dependent services can continue.",
+                config.name,
+                ex,
+            )
 
     async def about(self, name: str) -> GroupsModel:
         """
@@ -411,6 +422,15 @@ class Criadex:
         :return: Whether the model exists
         """
         return await self.mysql_api.azure_models.exists(model_id=model_id)
+
+    async def exists_cohere_model(self, model_id: int) -> bool:
+        """
+        Check if a Cohere model exists by ID.
+        
+        :param model_id: The model ID
+        :return: Whether the model exists
+        """
+        return await self.mysql_api.cohere_models.exists(model_id=model_id)
 
     async def about_azure_model(self, model_id: int) -> AzureModelsModel:
         """

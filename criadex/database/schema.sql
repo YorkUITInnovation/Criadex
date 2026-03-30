@@ -57,3 +57,11 @@ CREATE TABLE IF NOT EXISTS `Assets`
     FOREIGN KEY (document_id) REFERENCES `Documents` (id),
     FOREIGN KEY (group_id) REFERENCES `Groups` (id)
 );
+
+CREATE TABLE IF NOT EXISTS `GenericModels`
+(
+    `id`            INT AUTO_INCREMENT PRIMARY KEY,
+    `provider_type` VARCHAR(64)  NOT NULL,
+    `config`        JSON         NOT NULL,
+    `created`       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

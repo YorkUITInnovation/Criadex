@@ -732,6 +732,112 @@ Response (200 OK):
 }
 ```
 
+### 5.3 Generic Models (OpenAI-Compatible)
+
+#### 5.3.1 Create Generic Model
+POST /models/generic/create
+
+Request:
+```bash
+curl -X POST "${HOST}:${PORT}/models/generic/create" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: ${API_KEY}" \
+  -d '{
+    "api_model": "gpt-4",
+    "api_base_url": "https://api.openai.com/v1",
+    "api_key": "your-api-key"
+  }'
+```
+
+Response (200 OK):
+```json
+{
+  "status": 200,
+  "message": "Successfully created the model. Model ID returned in payload.",
+  "timestamp": "<timestamp>",
+  "code": "SUCCESS",
+  "model": {
+    "api_base_url": "https://api.openai.com/v1",
+    "api_key": "fake",
+    "api_model": "gpt-4",
+    "id": 20
+  }
+}
+```
+
+#### 5.3.2 Get Generic Model Info
+GET /models/generic/{model_id}/about
+
+Request:
+```bash
+curl "${HOST}:${PORT}/models/generic/20/about" \
+  -H "x-api-key: ${API_KEY}"
+```
+
+Response (200 OK):
+```json
+{
+  "status": 200,
+  "message": "Successfully retrieved the model config",
+  "timestamp": "<timestamp>",
+  "code": "SUCCESS",
+  "model": {
+    "api_base_url": "https://api.openai.com/v1",
+    "api_key": "fake",
+    "api_model": "gpt-4",
+    "id": 20
+  }
+}
+```
+
+#### 5.3.3 Update Generic Model
+PATCH /models/generic/{model_id}/update
+
+Request:
+```bash
+curl -X PATCH "${HOST}:${PORT}/models/generic/20/update" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: ${API_KEY}" \
+  -d '{
+    "api_base_url": "https://api.proxy.com/v1"
+  }'
+```
+
+Response (200 OK):
+```json
+{
+  "status": 200,
+  "message": "Successfully updated the model.",
+  "timestamp": "<timestamp>",
+  "code": "SUCCESS",
+  "model": {
+    "api_base_url": "https://api.proxy.com/v1",
+    "api_key": "fake",
+    "api_model": "gpt-4",
+    "id": 20
+  }
+}
+```
+
+#### 5.3.4 Delete Generic Model
+DELETE /models/generic/{model_id}/delete
+
+Request:
+```bash
+curl -X DELETE "${HOST}:${PORT}/models/generic/20/delete" \
+  -H "x-api-key: ${API_KEY}"
+```
+
+Response (200 OK):
+```json
+{
+  "status": 200,
+  "message": "Successfully deleted the model",
+  "timestamp": "<timestamp>",
+  "code": "SUCCESS"
+}
+```
+
 #### 5.2.5 Rerank with Cohere
 POST /models/{model_id}/rerank
 
@@ -783,6 +889,28 @@ Response (200 OK):
 
 ### 6.1 Ragflow Agents
 
+#### 6.1.0 Ensure Dialog
+POST /models/ragflow/{model_id}/dialog/ensure
+
+Initialize the backing Ragflow dialog before starting a chat.
+
+Request:
+```bash
+curl -X POST "${HOST}:${PORT}/models/ragflow/1/dialog/ensure" \
+  -H "x-api-key: ${API_KEY}"
+```
+
+Response (200 OK):
+```json
+{
+  "status": 200,
+  "message": "Dialog ensured successfully",
+  "timestamp": "<timestamp>",
+  "code": "SUCCESS",
+  "dialog_id": "your-dialog-id"
+}
+```
+
 #### 6.1.1 Chat
 POST /models/ragflow/{model_id}/agents/chat
 
@@ -792,13 +920,18 @@ curl -X POST "${HOST}:${PORT}/models/ragflow/1/agents/chat" \
   -H "Content-Type: application/json" \
   -H "x-api-key: ${API_KEY}" \
   -d '{
-    "prompt": "hi"
+    "chat_id": "your-chat-id",
+    "prompt": "hi",
+    "history": []
   }'
 ```
 
 Response (200 OK):
 ```json
 {
+  "code": "SUCCESS",
+  "status": 200,
+  "message": "Chat completed successfully",
   "agent_response": {
     "chat_response": {
       "message": {
@@ -806,26 +939,19 @@ Response (200 OK):
         "blocks": [
           {
             "block_type": "text",
-            "text": "Error: Invalid response from Ragflow API."
+            "text": "Hello!"
           }
         ],
         "additional_kwargs": {},
         "metadata": {}
       },
-      "raw": {
-        "code": 100,
-        "data": null,
-        "message": "<NotFound '404: Not Found'>"
-      }
+      "raw": {}
     },
     "usage": {
       "prompt_tokens": 1,
-      "completion_tokens": 9,
-      "total_tokens": 10,
-      "label": "ChatAgent"
-    },
-    "message": "Successfully queried the model!",
-    "model_id": 1
+      "completion_tokens": 1,
+      "total_tokens": 2
+    }
   }
 }
 ```

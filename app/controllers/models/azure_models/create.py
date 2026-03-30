@@ -51,7 +51,7 @@ class CreateAzureModelRoute(CriaRoute):
         ResponseModel(
             code="DUPLICATE",
             status=409,
-            message="That deployment already exists in the database for that Azure resource!",
+            message="That deployment already exists in the database for that Azure endpoint/resource value!",
             model=None
         )
     )

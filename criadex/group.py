@@ -136,8 +136,11 @@ class Group:
 
         es = getattr(self._index, "_elasticsearch_client", None)
         index_name = self._index.collection_name()
+
         if es is None:
-            return
+            raise RuntimeError(
+                f"Cannot delete group {self._group_name}: Elasticsearch client not available for index {index_name}"
+            )
 
         query = {
             "query": {
@@ -148,7 +151,25 @@ class Group:
                 }
             }
         }
-        await es.delete_by_query(index=index_name, body=query, conflicts="proceed", refresh=True)
+
+        result = await es.delete_by_query(
+            index=index_name,
+            body=query,
+            conflicts="proceed",
+            refresh=True
+        )
+
+        # Log a warning if no documents were deleted – this may indicate a configuration issue
+        try:
+            deleted = result.get("deleted", 0) if isinstance(result, dict) else 0
+        except Exception:
+            deleted = 0
+
+        if deleted == 0:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"No documents deleted for group {self._group_name} in index {index_name}"
+            )
 
     @property
     def expired(self) -> bool:

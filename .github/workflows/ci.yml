@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feature/fix-tests
+      - feature/child_bot
 
 jobs:
   test:

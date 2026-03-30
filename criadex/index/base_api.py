@@ -16,8 +16,6 @@ You should have received a copy of the GNU General Public License along with Cri
 
 from abc import abstractmethod
 from typing import Optional, List, Sequence, Generic, Any, Dict
-
-from typing import Optional, List, Generic, Any, Dict
 from criadex.index.schemas import ServiceConfig, BundleConfig
 from ..database.api import GroupDatabaseAPI
 from ..database.tables.groups import GroupsModel
@@ -151,8 +149,8 @@ class CriadexIndexAPI(Generic[BundleConfig]):
                     text=node_text,
                     metadata=node_metadata
                 )
-                # TODO: Calculate actual token cost
-                token_cost += 1 # Placeholder
+                # Approximate token cost by length of node text (very rough heuristic)
+                token_cost += max(1, len(node_text) // 4)
 
         # Handle QuestionConfig (assuming it has 'questions' and 'answer' fields)
         elif 'questions' in parsed_config and isinstance(parsed_config['questions'], list):
@@ -172,7 +170,7 @@ class CriadexIndexAPI(Generic[BundleConfig]):
                     text=question_text,
                     metadata=question_metadata
                 )
-                token_cost += 1
+                token_cost += max(1, len(question_text) // 4)
 
             # Index the answer
             if 'answer' in parsed_config and parsed_config['answer']:
@@ -187,7 +185,7 @@ class CriadexIndexAPI(Generic[BundleConfig]):
                     text=answer_text,
                     metadata=answer_metadata
                 )
-                token_cost += 1
+                token_cost += max(1, len(answer_text) // 4)
         
         return token_cost
 

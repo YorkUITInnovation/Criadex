@@ -76,32 +76,39 @@ def pytest_configure(config):
 
         # Apply sorting
         if sort:
-            # Assuming sort is a list of dictionaries, e.g., [{"metadata.updated_at": {"order": "desc"}}]
-            # Or a dictionary like {"metadata.updated_at": {"order": "desc"}}
-            # Let's handle both cases.
-            if isinstance(sort, list) and len(sort) > 0:
-                sort_criteria = sort[0]
-            elif isinstance(sort, dict):
+            if isinstance(sort, list):
                 sort_criteria = sort
+            elif isinstance(sort, dict):
+                sort_criteria = [sort]
             else:
-                sort_criteria = None
+                sort_criteria = []
 
-            if sort_criteria:
-                sort_field = list(sort_criteria.keys())[0] # e.g., "metadata.updated_at"
-                sort_order = sort_criteria[sort_field]["order"] # e.g., "desc"
+            def get_sort_value(hit, field_path):
+                if field_path == "_score":
+                    return hit.get("_score", 0.0)
 
-                # Extract nested field for sorting
-                def get_sort_value(hit, field_path):
-                    parts = field_path.split('.')
-                    value = hit['_source']
-                    for part in parts:
-                        value = value.get(part)
-                        if value is None:
-                            return None # Handle missing nested fields
+                parts = field_path.split('.')
+                value = hit['_source']
+                for part in parts:
+                    if not isinstance(value, dict):
+                        return None
+                    value = value.get(part)
+                    if value is None:
+                        return None
+                return value
+
+            for criterion in reversed(sort_criteria):
+                sort_field = list(criterion.keys())[0]
+                sort_order = criterion[sort_field]["order"]
+
+                def normalize_sort_value(hit):
+                    value = get_sort_value(hit, sort_field)
+                    if value is None:
+                        return 0 if sort_order == "desc" else float("inf")
                     return value
 
                 all_docs.sort(
-                    key=lambda hit: get_sort_value(hit, sort_field),
+                    key=normalize_sort_value,
                     reverse=(sort_order == "desc")
                 )
         
@@ -126,7 +133,7 @@ def pytest_unconfigure(config):
     
     """Undo monkeypatching at the end of the session."""
     config._monkeypatch_session.undo()
-    _unmonkeypatch_aiomysql_connect() # Unmonkeypatch aiomysql.connect here
+    _unmonkeypatch_aiomysql_connect()
     
 
 
@@ -147,38 +154,62 @@ def event_loop():
     # Custom exception handler to suppress "Event loop is closed" RuntimeError
     def custom_exception_handler(loop, context):
         exception = context.get("exception")
-        if isinstance(exception, RuntimeError) and "Event loop is closed" in str(exception):
-            return # Suppress this specific error
-        loop.default_exception_handler(context) # Call default handler for other exceptions
+        message = context.get("message", "")
+        if isinstance(exception, RuntimeError) and ("Event loop is closed" in str(exception) or "Event loop is closed" in message):
+            return
+        if "Event loop is closed" in str(exception) or "Event loop is closed" in message:
+            return
+        try:
+            loop.default_exception_handler(context)
+        except Exception:
+            pass
 
     loop.set_exception_handler(custom_exception_handler)
 
     yield loop
-    # Add a small delay before closing the loop
-    try:
-        # Close all tracked aiomysql connections
+    
+    import warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*Event loop is closed.*")
+        warnings.filterwarnings("ignore", category=ResourceWarning, message=".*unclosed.*")
         
-        for conn in _active_aiomysql_connections:
-            if not conn.closed:
-                loop.run_until_complete(conn.close())
-        # Explicitly clear references to aid garbage collection
-        _active_aiomysql_connections.clear()
-        # Also try to force garbage collection, though not guaranteed to work
-        import gc
-        gc.collect()
-        
-
-        _cancel_all_tasks(loop)
-        loop.run_until_complete(loop.shutdown_asyncgens())
-        loop.run_until_complete(asyncio.sleep(0.1)) # Small delay
-    finally:
         try:
-            loop.close()
-        except RuntimeError as e:
-            if "Event loop is closed" in str(e):
-                pass # Suppress this specific error
-            else:
-                raise
+            _cancel_all_tasks(loop)
+            loop.run_until_complete(loop.shutdown_asyncgens())
+            
+            for conn in _active_aiomysql_connections[:]:
+                try:
+                    if hasattr(conn, 'closed') and not conn.closed:
+                        try:
+                            if hasattr(conn, 'ensure_closed'):
+                                loop.run_until_complete(conn.ensure_closed())
+                            else:
+                                loop.run_until_complete(conn.close())
+                        except (RuntimeError, AttributeError, Exception):
+                            pass
+                except Exception:
+                    pass
+            
+            _active_aiomysql_connections.clear()
+            import gc
+            gc.collect()
+            
+            loop.run_until_complete(asyncio.sleep(0.1))
+        except Exception:
+            pass
+        finally:
+            try:
+                pending = asyncio.all_tasks(loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            except Exception:
+                pass
+            try:
+                loop.close()
+            except Exception:
+                pass
 
 
 
@@ -308,7 +339,14 @@ async def setup_database():
                     await cursor.execute(statement)
 
     yield
-    # Connection will be closed by the event_loop fixture's cleanup
+    try:
+        if hasattr(conn, "closed") and not conn.closed:
+            if hasattr(conn, "ensure_closed"):
+                await conn.ensure_closed()
+            else:
+                conn.close()
+    except Exception:
+        pass
 
 
 @pytest_asyncio.fixture(scope="session")
@@ -328,6 +366,14 @@ async def db_connection(setup_database):
     )
     _active_aiomysql_connections.append(conn)
     yield conn
+    try:
+        if hasattr(conn, 'closed') and not conn.closed:
+            if hasattr(conn, 'ensure_closed'):
+                await conn.ensure_closed()
+            else:
+                conn.close()
+    except Exception:
+        pass
 
 @pytest_asyncio.fixture(scope="session")
 async def criadex_app(request, populate_models): # Add request to access config
