@@ -38,6 +38,7 @@ from criadex.index.ragflow_objects.embedder import RagflowEmbedder
 from criadex.index.ragflow_objects.retriever import RagflowRetriever
 
 from criadex.index.index_api.document.index_objects import DocumentConfig
+from criadex.graph import GroupGraphStore
 
 class Criadex:
     """
@@ -62,6 +63,7 @@ class Criadex:
         self.cache = None
         self.event = Event()
         self._active = {}
+        self.graph_store = GroupGraphStore()
 
     async def initialize(self) -> None:
         """
@@ -372,6 +374,72 @@ class Criadex:
         self.cache.set(cache_key, results)
         
         return results
+
+    async def _group_documents(self, group_name: str, size: int = 500) -> list[str]:
+        if self.vector_store is None or getattr(self.vector_store, "es", None) is None:
+            return []
+
+        def run_search():
+            return self.vector_store.es.search(
+                index=group_name,
+                query={"match_all": {}},
+                size=size,
+                sort=[{"metadata.updated_at": {"order": "desc"}}],
+            )
+
+        response = await asyncio.get_running_loop().run_in_executor(None, run_search)
+        hits = response.get("hits", {}).get("hits", [])
+        return [hit.get("_source", {}).get("text", "") for hit in hits if hit.get("_source", {}).get("text")]
+
+    async def build_graph(self, group_name: str) -> dict:
+        if not await self.exists(name=group_name):
+            raise GroupNotFoundError()
+
+        documents = await self._group_documents(group_name=group_name)
+        return self.graph_store.build(group_name=group_name, documents=documents)
+
+    async def graph_status(self, group_name: str) -> dict:
+        if not await self.exists(name=group_name):
+            raise GroupNotFoundError()
+        return self.graph_store.status(group_name=group_name)
+
+    async def graph_search(
+        self,
+        group_name: str,
+        query: SearchConfig,
+        max_hops: int = 1,
+        max_expansion_terms: int = 8,
+        auto_build: bool = False
+    ):
+        if not await self.exists(name=group_name):
+            raise GroupNotFoundError()
+
+        graph_status = self.graph_store.status(group_name=group_name)
+        if graph_status["status"] != "READY" and auto_build:
+            graph_status = await self.build_graph(group_name=group_name)
+
+        expanded_terms: list[str] = []
+        effective_query = query.query
+        if graph_status["status"] == "READY":
+            expanded_terms = self.graph_store.expand_query(
+                group_name=group_name,
+                query=query.query,
+                max_hops=max_hops,
+                max_terms=max_expansion_terms,
+            )
+            if expanded_terms:
+                effective_query = f"{query.query}\nRelated terms: {', '.join(expanded_terms)}"
+
+        graph_query = query.model_copy(update={"query": effective_query})
+        response = await self.search(group_name=group_name, query=graph_query)
+
+        graph_metadata = {
+            "status": graph_status["status"],
+            "expanded_terms": expanded_terms,
+            "max_hops": max_hops,
+            "max_expansion_terms": max_expansion_terms,
+        }
+        return response, graph_metadata
 
     async def insert_azure_model(self, config: AzureModelsBaseModel) -> AzureModelsModel:
         """

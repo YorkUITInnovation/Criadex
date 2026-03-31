@@ -6,6 +6,7 @@ on:
       - main
       - feature/fix-tests
       - feature/child_bot
+      - graphrag
 
 jobs:
   test:

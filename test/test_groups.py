@@ -6,6 +6,7 @@ from httpx import Response
 from app.controllers.groups.about import GroupAboutResponse
 from app.controllers.groups.create import GroupCreateResponse
 from app.controllers.groups.delete import GroupDeleteResponse
+from app.controllers.groups.graph import GraphBuildResponse, GraphSearchResponse, GraphStatusResponse
 from app.controllers.groups.query import GroupQueryResponse
 from criadex.schemas import PartialGroupConfig
 from criadex.index.schemas import SearchConfig
@@ -220,3 +221,160 @@ async def test_groups_query_negative(
     assert response_data.nodes == []
     assert response_data.assets == []
     assert response_data.search_units == 0
+
+
+@pytest.mark.asyncio
+async def test_groups_graph_routes_positive(
+    client: CriaTestClient,
+    sample_master_headers: dict,
+    sample_llm_id: int,
+    sample_embedding_id: int,
+    sample_reranker_id: int,
+    mock_elasticsearch_client
+) -> None:
+    test_group: str = "pytest-graph-" + str(uuid.uuid4())
+    test_payload: PartialGroupConfig = PartialGroupConfig(
+        type="DOCUMENT",
+        llm_model_id=sample_llm_id,
+        rerank_model_id=sample_reranker_id,
+        embedding_model_id=sample_embedding_id
+    )
+
+    response: Response = client.post(
+        f"/groups/{test_group}/create",
+        headers=sample_master_headers,
+        json=test_payload.model_dump()
+    )
+    assert response.status_code == 200, "Failed to create test group for graph routes test"
+
+    mock_elasticsearch_client._data[test_group] = {
+        "doc1": {
+            "text": "Midterm and final exam policy for computer science.",
+            "metadata": {"source": "syllabus", "updated_at": 1}
+        },
+        "doc2": {
+            "text": "Assignment weighting and quiz grading rubric for students.",
+            "metadata": {"source": "syllabus", "updated_at": 2}
+        },
+    }
+
+    status_response = client.get(f"/groups/{test_group}/graph_status", headers=sample_master_headers)
+    status_data: GraphStatusResponse = assert_response_shape(
+        status_response.json(),
+        custom_shape=GraphStatusResponse
+    )
+    assert status_data.status == 200
+    assert status_data.graph_status == "NOT_BUILT"
+
+    build_response = client.post(f"/groups/{test_group}/build_graph", headers=sample_master_headers)
+    build_data: GraphBuildResponse = assert_response_shape(
+        build_response.json(),
+        custom_shape=GraphBuildResponse
+    )
+    assert build_data.status == 200
+    assert build_data.graph_status == "READY"
+    assert build_data.node_count >= 1
+
+    graph_query_payload = {
+        "query": "How is exam grading calculated?",
+        "top_k": 3,
+        "max_hops": 2,
+        "max_expansion_terms": 5,
+        "auto_build": False
+    }
+    search_response = client.post(
+        f"/groups/{test_group}/graph_search",
+        headers=sample_master_headers,
+        json=graph_query_payload
+    )
+    search_data: GraphSearchResponse = assert_response_shape(
+        search_response.json(),
+        custom_shape=GraphSearchResponse
+    )
+    assert search_data.status == 200
+    assert isinstance(search_data.nodes, list)
+    assert "status" in search_data.graph_metadata
+
+    delete_response = client.delete(f"/groups/{test_group}/delete", headers=sample_master_headers)
+    assert delete_response.status_code == 200, "Failed to delete test group after graph routes test"
+
+
+@pytest.mark.asyncio
+async def test_groups_graph_routes_negative_not_found(
+    client: CriaTestClient,
+    sample_master_headers: dict
+) -> None:
+    missing_group = "pytest-graph-missing-" + str(uuid.uuid4())
+
+    build_response = client.post(f"/groups/{missing_group}/build_graph", headers=sample_master_headers)
+    build_data: GraphBuildResponse = assert_response_shape(
+        build_response.json(),
+        custom_shape=GraphBuildResponse,
+        require_status=None,
+        require_code=None
+    )
+    assert build_data.status == 404
+    assert build_data.code == "GROUP_NOT_FOUND"
+
+    status_response = client.get(f"/groups/{missing_group}/graph_status", headers=sample_master_headers)
+    status_data: GraphStatusResponse = assert_response_shape(
+        status_response.json(),
+        custom_shape=GraphStatusResponse,
+        require_status=None,
+        require_code=None
+    )
+    assert status_data.status == 404
+    assert status_data.code == "GROUP_NOT_FOUND"
+
+    search_response = client.post(
+        f"/groups/{missing_group}/graph_search",
+        headers=sample_master_headers,
+        json={"query": "hello", "top_k": 2}
+    )
+    search_data: GraphSearchResponse = assert_response_shape(
+        search_response.json(),
+        custom_shape=GraphSearchResponse,
+        require_status=None,
+        require_code=None
+    )
+    assert search_data.status == 404
+    assert search_data.code == "GROUP_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_groups_graph_search_auto_build_edge_empty_index(
+    client: CriaTestClient,
+    sample_master_headers: dict,
+    sample_llm_id: int,
+    sample_embedding_id: int,
+    sample_reranker_id: int,
+) -> None:
+    test_group: str = "pytest-graph-empty-" + str(uuid.uuid4())
+    test_payload: PartialGroupConfig = PartialGroupConfig(
+        type="DOCUMENT",
+        llm_model_id=sample_llm_id,
+        rerank_model_id=sample_reranker_id,
+        embedding_model_id=sample_embedding_id
+    )
+    create_response = client.post(
+        f"/groups/{test_group}/create",
+        headers=sample_master_headers,
+        json=test_payload.model_dump()
+    )
+    assert create_response.status_code == 200
+
+    search_response = client.post(
+        f"/groups/{test_group}/graph_search",
+        headers=sample_master_headers,
+        json={"query": "gradebook policy", "top_k": 2, "auto_build": True}
+    )
+    search_data: GraphSearchResponse = assert_response_shape(
+        search_response.json(),
+        custom_shape=GraphSearchResponse
+    )
+    assert search_data.status == 200
+    assert search_data.graph_metadata["status"] == "READY"
+    assert search_data.graph_metadata["expanded_terms"] == []
+
+    delete_response = client.delete(f"/groups/{test_group}/delete", headers=sample_master_headers)
+    assert delete_response.status_code == 200
