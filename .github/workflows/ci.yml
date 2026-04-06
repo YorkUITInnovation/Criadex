@@ -77,6 +77,11 @@ jobs:
         TEST_EMBEDDING_ID=2
         TEST_RERANKER_ID=1
         APP_API_MODE=TESTING
+        GRAPH_RAG_ENABLED=true
+        GRAPH_RAG_FALLBACK_ENABLED=true
+        GRAPH_BUILD_TIMEOUT_SECONDS=30
+        GRAPH_BUILD_POLL_INTERVAL_SECONDS=1
+        GRAPH_BUILD_MAX_RETRIES=1
         EOF
 
     - name: Wait for services (MySQL & Elasticsearch)
@@ -109,6 +114,11 @@ jobs:
         TEST_EMBEDDING_ID: 2
         TEST_RERANKER_ID: 1
         APP_API_MODE: TESTING
+        GRAPH_RAG_ENABLED: true
+        GRAPH_RAG_FALLBACK_ENABLED: true
+        GRAPH_BUILD_TIMEOUT_SECONDS: 30
+        GRAPH_BUILD_POLL_INTERVAL_SECONDS: 1
+        GRAPH_BUILD_MAX_RETRIES: 1
       run: |
         # Run tests
         pytest -s -v test

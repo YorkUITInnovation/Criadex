@@ -1,15 +1,19 @@
 import uuid
+import json
 
 import pytest
 from httpx import Response
+from unittest.mock import AsyncMock
 
 from app.controllers.groups.about import GroupAboutResponse
 from app.controllers.groups.create import GroupCreateResponse
 from app.controllers.groups.delete import GroupDeleteResponse
 from app.controllers.groups.graph import GraphBuildResponse, GraphSearchResponse, GraphStatusResponse
 from app.controllers.groups.query import GroupQueryResponse
+from criadex.index.base_api import ContentUploadConfig
 from criadex.schemas import PartialGroupConfig
 from criadex.index.schemas import SearchConfig
+from .utils.content_utils import sample_document
 from .utils.test_client import CriaTestClient, assert_response_shape
 
 
@@ -264,7 +268,7 @@ async def test_groups_graph_routes_positive(
         custom_shape=GraphStatusResponse
     )
     assert status_data.status == 200
-    assert status_data.graph_status == "NOT_BUILT"
+    assert status_data.graph.status in {"NOT_BUILT", "QUEUED"}
 
     build_response = client.post(f"/groups/{test_group}/build_graph", headers=sample_master_headers)
     build_data: GraphBuildResponse = assert_response_shape(
@@ -272,8 +276,16 @@ async def test_groups_graph_routes_positive(
         custom_shape=GraphBuildResponse
     )
     assert build_data.status == 200
-    assert build_data.graph_status == "READY"
-    assert build_data.node_count >= 1
+    assert build_data.job_id is not None
+    assert build_data.state in {"QUEUED", "RUNNING", "READY"}
+
+    status_response_after_build = client.get(f"/groups/{test_group}/graph_status", headers=sample_master_headers)
+    status_data_after_build: GraphStatusResponse = assert_response_shape(
+        status_response_after_build.json(),
+        custom_shape=GraphStatusResponse
+    )
+    assert status_data_after_build.status == 200
+    assert status_data_after_build.graph.status in {"QUEUED", "RUNNING", "READY"}
 
     graph_query_payload = {
         "query": "How is exam grading calculated?",
@@ -293,7 +305,7 @@ async def test_groups_graph_routes_positive(
     )
     assert search_data.status == 200
     assert isinstance(search_data.nodes, list)
-    assert "status" in search_data.graph_metadata
+    assert "source" in search_data.graph_metadata
 
     delete_response = client.delete(f"/groups/{test_group}/delete", headers=sample_master_headers)
     assert delete_response.status_code == 200, "Failed to delete test group after graph routes test"
@@ -373,8 +385,133 @@ async def test_groups_graph_search_auto_build_edge_empty_index(
         custom_shape=GraphSearchResponse
     )
     assert search_data.status == 200
-    assert search_data.graph_metadata["status"] == "READY"
-    assert search_data.graph_metadata["expanded_terms"] == []
+    assert search_data.graph_metadata["source"] in {"fallback", "ragflow", "standard"}
+    assert isinstance(search_data.graph_metadata["expanded_terms"], list)
+
+    delete_response = client.delete(f"/groups/{test_group}/delete", headers=sample_master_headers)
+    assert delete_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_groups_graph_search_fallback_on_ragflow_error(
+    client: CriaTestClient,
+    sample_master_headers: dict,
+    sample_llm_id: int,
+    sample_embedding_id: int,
+    sample_reranker_id: int,
+    mock_elasticsearch_client
+) -> None:
+    test_group = "pytest-graph-fallback-" + str(uuid.uuid4())
+    create_payload = PartialGroupConfig(
+        type="DOCUMENT",
+        llm_model_id=sample_llm_id,
+        rerank_model_id=sample_reranker_id,
+        embedding_model_id=sample_embedding_id
+    )
+    create_response = client.post(
+        f"/groups/{test_group}/create",
+        headers=sample_master_headers,
+        json=create_payload.model_dump()
+    )
+    assert create_response.status_code == 200
+
+    mock_elasticsearch_client._data[test_group] = {
+        "doc1": {"text": "Grading rubric includes quizzes and exams.", "metadata": {"updated_at": 1}},
+    }
+
+    async def ready_ragflow_status(group_name: str, job_id=None):
+        return {
+            "group_name": group_name,
+            "graph": {
+                "status": "READY",
+                "source": "ragflow",
+                "node_count": 1,
+                "edge_count": 0,
+                "top_entities": [],
+                "fallback_reason": None,
+                "error": None,
+                "built_at": None,
+                "updated_at": None,
+            },
+            "job": {"job_id": "job-ragflow-ready", "state": "READY", "source": "ragflow", "progress": 100},
+        }
+
+    client.app.criadex.graph_status = ready_ragflow_status
+
+    client.app.criadex.graph_rag_client.graph_search = AsyncMock(side_effect=RuntimeError("ragflow graph unavailable"))
+
+    search_response = client.post(
+        f"/groups/{test_group}/graph_search",
+        headers=sample_master_headers,
+        json={"query": "How is grading weighted?", "top_k": 2, "auto_build": False}
+    )
+    search_data: GraphSearchResponse = assert_response_shape(
+        search_response.json(),
+        custom_shape=GraphSearchResponse
+    )
+    assert search_data.status == 200
+    assert search_data.graph_metadata["source"] == "fallback"
+    assert "ragflow graph unavailable" in (search_data.graph_metadata.get("fallback_reason") or "")
+
+    delete_response = client.delete(f"/groups/{test_group}/delete", headers=sample_master_headers)
+    assert delete_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_groups_graph_search_auto_build_rebuilds_stale_graph(
+    client: CriaTestClient,
+    sample_master_headers: dict,
+    sample_llm_id: int,
+    sample_embedding_id: int,
+    sample_reranker_id: int,
+    mock_elasticsearch_client
+) -> None:
+    test_group = "pytest-graph-stale-" + str(uuid.uuid4())
+    create_payload = PartialGroupConfig(
+        type="DOCUMENT",
+        llm_model_id=sample_llm_id,
+        rerank_model_id=sample_reranker_id,
+        embedding_model_id=sample_embedding_id
+    )
+    create_response = client.post(
+        f"/groups/{test_group}/create",
+        headers=sample_master_headers,
+        json=create_payload.model_dump()
+    )
+    assert create_response.status_code == 200
+
+    mock_elasticsearch_client._data[test_group] = {
+        "doc1": {"text": "Course grade uses labs and final exam.", "metadata": {"updated_at": 1}},
+    }
+
+    first_build = client.post(f"/groups/{test_group}/build_graph", headers=sample_master_headers)
+    first_build_data: GraphBuildResponse = assert_response_shape(first_build.json(), custom_shape=GraphBuildResponse)
+    assert first_build_data.job_id is not None
+
+    upload_payload = ContentUploadConfig(
+        file_name="pytest-stale-doc-" + str(uuid.uuid4()),
+        file_contents=sample_document().model_dump(),
+        file_metadata={"source": "pytest-stale-rebuild"}
+    )
+    upload_response = client.post(
+        f"/groups/{test_group}/content/upload",
+        headers=sample_master_headers,
+        json=json.loads(upload_payload.model_dump_json())
+    )
+    assert upload_response.status_code == 200
+
+    search_response = client.post(
+        f"/groups/{test_group}/graph_search",
+        headers=sample_master_headers,
+        json={"query": "How are final grades calculated?", "top_k": 2, "auto_build": True}
+    )
+    search_data: GraphSearchResponse = assert_response_shape(
+        search_response.json(),
+        custom_shape=GraphSearchResponse
+    )
+    assert search_data.status == 200
+    assert search_data.graph_metadata.get("job_id") is not None
+    assert search_data.graph_metadata.get("job_id") != first_build_data.job_id
 
     delete_response = client.delete(f"/groups/{test_group}/delete", headers=sample_master_headers)
     assert delete_response.status_code == 200

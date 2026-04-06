@@ -13,15 +13,42 @@ view = APIRouter()
 class GraphBuildResponse(APIResponse):
     code: Union[SUCCESS, GROUP_NOT_FOUND, ERROR]
     group_name: Optional[str] = None
-    graph_status: str = "NOT_BUILT"
-    built_at: Optional[int] = None
+    job_id: Optional[str] = None
+    state: str = "QUEUED"
+    source: str = "none"
+    progress: int = 0
+    error: Optional[str] = None
+    created_at: Optional[int] = None
+    updated_at: Optional[int] = None
+
+
+class GraphBuildJob(BaseModel):
+    job_id: Optional[str] = None
+    state: str = "QUEUED"
+    source: str = "none"
+    progress: int = 0
+    error: Optional[str] = None
+    created_at: Optional[int] = None
+    updated_at: Optional[int] = None
+
+
+class GraphState(BaseModel):
+    status: str = "NOT_BUILT"
+    source: str = "none"
     node_count: int = 0
     edge_count: int = 0
     top_entities: List[str] = Field(default_factory=list)
+    fallback_reason: Optional[str] = None
+    error: Optional[str] = None
+    built_at: Optional[int] = None
+    updated_at: Optional[int] = None
 
 
-class GraphStatusResponse(GraphBuildResponse):
-    pass
+class GraphStatusResponse(APIResponse):
+    code: Union[SUCCESS, GROUP_NOT_FOUND, ERROR]
+    group_name: Optional[str] = None
+    graph: GraphState = Field(default_factory=GraphState)
+    job: Optional[GraphBuildJob] = None
 
 
 class GraphSearchConfig(SearchConfig):
@@ -50,13 +77,15 @@ async def build_graph(group_name: str, request: Request) -> GraphBuildResponse:
         return GraphBuildResponse(
             code="SUCCESS",
             status=200,
-            message=f"Successfully built graph for group '{group_name}'.",
+            message=f"Successfully queued graph build for group '{group_name}'.",
             group_name=group_name,
-            graph_status=result["status"],
-            built_at=result["built_at"],
-            node_count=result["node_count"],
-            edge_count=result["edge_count"],
-            top_entities=result["top_entities"],
+            job_id=result.get("job_id"),
+            state=result.get("state", "QUEUED"),
+            source=result.get("source", "none"),
+            progress=result.get("progress", 0),
+            error=result.get("error"),
+            created_at=result.get("created_at"),
+            updated_at=result.get("updated_at"),
         )
     except GroupNotFoundError:
         return GraphBuildResponse(
@@ -83,16 +112,23 @@ async def build_graph(group_name: str, request: Request) -> GraphBuildResponse:
 async def graph_status(group_name: str, request: Request) -> GraphStatusResponse:
     try:
         result = await request.app.criadex.graph_status(group_name=group_name)
+        job_data = result.get("job")
+        graph_data = result.get("graph", {})
         return GraphStatusResponse(
             code="SUCCESS",
             status=200,
             message=f"Successfully retrieved graph status for group '{group_name}'.",
             group_name=group_name,
-            graph_status=result["status"],
-            built_at=result["built_at"],
-            node_count=result["node_count"],
-            edge_count=result["edge_count"],
-            top_entities=result["top_entities"],
+            graph=GraphState(**graph_data),
+            job=GraphBuildJob(
+                job_id=job_data.get("job_id"),
+                state=job_data.get("state", "QUEUED"),
+                source=job_data.get("source", "none"),
+                progress=job_data.get("progress", 0),
+                error=job_data.get("error"),
+                created_at=job_data.get("created_at"),
+                updated_at=job_data.get("updated_at"),
+            ) if isinstance(job_data, dict) else None,
         )
     except GroupNotFoundError:
         return GraphStatusResponse(

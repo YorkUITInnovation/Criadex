@@ -46,6 +46,13 @@ QUERY_MODEL_RATE_LIMIT_MINUTE: str = SEARCH_INDEX_LIMIT_MINUTE
 QUERY_MODEL_RATE_LIMIT_HOUR: str = SEARCH_INDEX_LIMIT_HOUR
 QUERY_MODEL_RATE_LIMIT_DAY: str = SEARCH_INDEX_LIMIT_DAY
 
+# Graph RAG Config
+GRAPH_RAG_ENABLED: bool = (os.environ.get("GRAPH_RAG_ENABLED", "true").lower() == "true")
+GRAPH_RAG_FALLBACK_ENABLED: bool = (os.environ.get("GRAPH_RAG_FALLBACK_ENABLED", "true").lower() == "true")
+GRAPH_BUILD_TIMEOUT_SECONDS: int = int(os.environ.get("GRAPH_BUILD_TIMEOUT_SECONDS", "120"))
+GRAPH_BUILD_POLL_INTERVAL_SECONDS: int = int(os.environ.get("GRAPH_BUILD_POLL_INTERVAL_SECONDS", "3"))
+GRAPH_BUILD_MAX_RETRIES: int = int(os.environ.get("GRAPH_BUILD_MAX_RETRIES", "2"))
+
 # Swagger Config
 SWAGGER_TITLE: str = "Criadex API"
 SWAGGER_FAVICON: str = "https://i.imgur.com/9XOI3qg.png"
