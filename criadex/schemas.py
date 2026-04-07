@@ -134,6 +134,7 @@ class PartialGroupConfig(BaseModel):
     llm_model_id: int
     embedding_model_id: int
     rerank_model_id: int
+    use_knowledge_graph: bool = True
 
 
 class GroupConfig(PartialGroupConfig):
