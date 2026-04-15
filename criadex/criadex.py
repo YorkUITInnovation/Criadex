@@ -446,17 +446,17 @@ class Criadex:
                     """
                     INSERT INTO GroupGraphStates
                         (group_name, status, source, node_count, edge_count, top_entities, fallback_reason, error, built_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) AS new
                     ON DUPLICATE KEY UPDATE
-                        status=VALUES(status),
-                        source=VALUES(source),
-                        node_count=VALUES(node_count),
-                        edge_count=VALUES(edge_count),
-                        top_entities=VALUES(top_entities),
-                        fallback_reason=VALUES(fallback_reason),
-                        error=VALUES(error),
-                        built_at=VALUES(built_at),
-                        updated_at=VALUES(updated_at)
+                        status=new.status,
+                        source=new.source,
+                        node_count=new.node_count,
+                        edge_count=new.edge_count,
+                        top_entities=new.top_entities,
+                        fallback_reason=new.fallback_reason,
+                        error=new.error,
+                        built_at=new.built_at,
+                        updated_at=new.updated_at
                     """,
                     (
                         group_name,
