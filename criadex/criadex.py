@@ -32,6 +32,7 @@ from app.core.schemas import AppMode
 from app.core import config
 from criadex.database.tables.models.cohere import COHERE_MODELS, CohereModelsBaseModel, CohereModelsModel
 from criadex.database.tables.models.azure import AZURE_MODELS, AzureModelsBaseModel, AzureModelsModel
+from criadex.database.tables.models.generic import GenericModelsModel
 from criadex.index.schemas import SearchConfig
 from criadex.schemas import ModelExistsError
 from criadex.core.event import Event
@@ -924,6 +925,9 @@ class Criadex:
             raise ModelNotFoundError()
         return model
 
+    async def list_azure_models(self) -> list[AzureModelsModel]:
+        return await self.mysql_api.azure_models.get_all()
+
     async def delete_azure_model(self, model_id: int) -> None:
         """
         Delete an Azure model by ID. Raise ModelNotFoundError if missing and
@@ -960,6 +964,12 @@ class Criadex:
             from criadex.schemas import ModelNotFoundError
             raise ModelNotFoundError()
         return model
+
+    async def list_cohere_models(self) -> list[CohereModelsModel]:
+        return await self.mysql_api.cohere_models.get_all()
+
+    async def list_generic_models(self) -> list[GenericModelsModel]:
+        return await self.mysql_api.generic_models.get_all()
 
     async def update_cohere_model(self, config: CohereModelsModel) -> CohereModelsModel:
         """

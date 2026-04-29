@@ -188,3 +188,70 @@ async def test_generic_models_rejects_azure_and_cohere(
         json=body,
     )
     assert cohere_resp.status_code in (200, 400, 409, 422)
+
+
+@pytest.mark.asyncio
+async def test_provider_model_list_endpoints(
+        client: CriaTestClient,
+        sample_master_headers: dict
+) -> None:
+    azure_response = client.get(
+        "/models/azure/list",
+        headers=sample_master_headers,
+    )
+    azure_data: APIResponse = assert_response_shape(azure_response.json())
+    assert azure_data.status == 200
+    assert any(model["api_model"] == "gpt-4" for model in azure_response.json().get("models", []))
+    assert any(model["api_model"] == "text-embedding-ada-002" for model in azure_response.json().get("models", []))
+
+    cohere_response = client.get(
+        "/models/cohere/list",
+        headers=sample_master_headers,
+    )
+    cohere_data: APIResponse = assert_response_shape(cohere_response.json())
+    assert cohere_data.status == 200
+    assert any(model["api_model"] == "rerank-english-v2.0" for model in cohere_response.json().get("models", []))
+
+
+@pytest.mark.asyncio
+async def test_aggregate_model_list_endpoint(
+        client: CriaTestClient,
+        sample_master_headers: dict
+) -> None:
+    response = client.get(
+        "/models/list",
+        headers=sample_master_headers,
+    )
+    data: APIResponse = assert_response_shape(response.json())
+    assert data.status == 200
+
+    models = response.json().get("models", [])
+    provider_types = {model["provider_type"] for model in models}
+    assert "azure" in provider_types
+    assert "cohere" in provider_types
+
+
+@pytest.mark.asyncio
+async def test_generic_provider_list_endpoint(
+        client: CriaTestClient,
+        sample_master_headers: dict
+) -> None:
+    provider_type = "ollama"
+    create_response = client.post(
+        f"/models/{provider_type}/create",
+        headers=sample_master_headers,
+        json={
+            "api_base_url": "http://ollama:11434",
+            "api_model": "llama3:8b",
+        },
+    )
+    create_data: APIResponse = assert_response_shape(create_response.json())
+    assert create_data.status == 200
+
+    list_response = client.get(
+        f"/models/{provider_type}/list",
+        headers=sample_master_headers,
+    )
+    list_data: APIResponse = assert_response_shape(list_response.json())
+    assert list_data.status == 200
+    assert any(model["provider_type"] == provider_type for model in list_response.json().get("models", []))

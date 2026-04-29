@@ -71,3 +71,20 @@ class GenericModels(Table):
 
     async def exists(self, model_id: int) -> bool:
         return bool(await self.retrieve(model_id=model_id))
+
+    async def get_all(self) -> list[GenericModelsModel]:
+        async with self.cursor() as cursor:
+            await cursor.execute(
+                "SELECT `id`, `provider_type`, `config`, `created` FROM GenericModels"
+            )
+            rows = await cursor.fetchall()
+
+        models: list[GenericModelsModel] = []
+        for row in rows:
+            config = row[2]
+            if isinstance(config, str):
+                config = json.loads(config)
+            models.append(
+                GenericModelsModel(id=row[0], provider_type=row[1], config=config)
+            )
+        return models

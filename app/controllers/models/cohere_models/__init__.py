@@ -20,7 +20,7 @@ from app.core.security import get_api_key_model_query
 from app.core import config
 from app.core.route import CriaRouter
 from app.core.schemas import AppMode
-from . import about, create, delete, update, rerank
+from . import about, create, delete, update, rerank, list
 
 router = CriaRouter(
     tags=["Models:Cohere"],
@@ -32,7 +32,8 @@ router.include_views(
     update.view,
     delete.view,
     about.view,
-    rerank.view
+    rerank.view,
+    list.view
 )
 
 __all__ = ["router"]
