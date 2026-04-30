@@ -5,6 +5,7 @@ from httpx import Response
 from app.controllers.schemas import APIResponse, SUCCESS, ERROR, MODEL_NOT_FOUND
 from app.controllers.models.cohere_models.schemas import CohereRerankRequest, CohereRerankResponse
 from criadex.index.ragflow_objects.embedder import RagflowEmbedder
+from criadex.index.ragflow_objects.vector_store import RagflowVectorStore
 from test.utils.test_client import CriaTestClient, assert_response_shape
 
 
@@ -19,6 +20,18 @@ def test_ragflow_embedder():
     assert isinstance(embedding, list), "Embedding should be a list"
     assert len(embedding) > 0, "Embedding should not be empty"
     assert all(isinstance(x, float) for x in embedding), "All elements in the embedding should be floats"
+
+
+def test_ragflow_vector_store_create_collection_uses_requested_dims(mock_elasticsearch_client):
+    mock_elasticsearch_client.indices.exists.return_value = False
+    mock_elasticsearch_client.indices.create.reset_mock()
+
+    store = RagflowVectorStore(host="localhost", port=9200)
+    store.create_collection("pytest-dims-index", embedding_dims=1536)
+
+    mock_elasticsearch_client.indices.create.assert_called_once()
+    _, kwargs = mock_elasticsearch_client.indices.create.call_args
+    assert kwargs["body"]["mappings"]["properties"]["embedding"]["dims"] == 1536
 
 @pytest.mark.asyncio
 async def test_cohere_rerank_positive(

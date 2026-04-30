@@ -6,7 +6,7 @@ Criadex is distributed in the hope that it will be useful, but WITHOUT ANY WARRA
 You should have received a copy of the GNU General Public License along with Criadex. If not, see <https://www.gnu.org/licenses/>.
 
 @package    Criadex
-@author     kiarash b
+@author     kiarash bashokian
 @copyright  2025 onwards York University (https://yorku.ca/)
 @repository https://github.com/YorkUITInnovation/Criadex
 @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -20,7 +20,7 @@ import asyncio
 import json
 
 class RagflowVectorStore:
-    def __init__(self, host, port, username=None, password=None, index_name="criadex", group_name=None):
+    def __init__(self, host, port, username=None, password=None, index_name="criadex", group_name=None, embedding_dims=768):
         self.es = Elasticsearch(
             hosts=[{"host": host, "port": port, "scheme": "http"}],
             basic_auth=(username, password) if username and password else None,
@@ -31,6 +31,7 @@ class RagflowVectorStore:
         )
         self.index_name = index_name
         self.group_name = group_name
+        self.embedding_dims = embedding_dims
 
     def collection_exists(self, collection_name):
         return self.es.indices.exists(index=collection_name)
@@ -39,9 +40,10 @@ class RagflowVectorStore:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self.collection_exists, collection_name)
 
-    def create_collection(self, collection_name):
+    def create_collection(self, collection_name, embedding_dims=None):
         try:
             if not self.es.indices.exists(index=collection_name):
+                resolved_dims = int(embedding_dims or self.embedding_dims or 768)
                 mapping = {
                     "mappings": {
                         "properties": {
@@ -56,7 +58,7 @@ class RagflowVectorStore:
                             },
                             "embedding": {
                                 "type": "dense_vector",
-                                "dims": 768
+                                "dims": resolved_dims
                             }
                         }
                     }
@@ -69,9 +71,9 @@ class RagflowVectorStore:
             # For testing purposes, we'll assume the index exists
             pass
 
-    async def acreate_collection(self, collection_name):
+    async def acreate_collection(self, collection_name, embedding_dims=None):
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self.create_collection, collection_name)
+        await loop.run_in_executor(None, self.create_collection, collection_name, embedding_dims)
 
     def insert(self, collection_name, doc_id, embedding, text, metadata=None):
         body = {"text": text, "embedding": embedding}

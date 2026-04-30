@@ -117,6 +117,11 @@ class Criadex:
             index_name="criadex"
         )
         self.embedder = RagflowEmbedder()
+        try:
+            self.embedding_dims = len(self.embedder.embed("dimension probe"))
+        except Exception:
+            self.embedding_dims = 768
+        self.vector_store.embedding_dims = self.embedding_dims
         self.retriever = RagflowRetriever(self.vector_store, self.embedder)
 
         # Criadex features
@@ -171,7 +176,10 @@ class Criadex:
         # group so upstream services (e.g., CriaParse) can still rely on
         # the group existing and retry ES operations later.
         try:
-            await self.vector_store.acreate_collection(collection_name=config.name)
+            await self.vector_store.acreate_collection(
+                collection_name=config.name,
+                embedding_dims=self.embedding_dims,
+            )
         except Exception as ex:
             logging.warning(
                 "Criadex: failed to create Elasticsearch index for group '%s': %s. "
