@@ -15,6 +15,7 @@ You should have received a copy of the GNU General Public License along with Cri
 """
 
 from typing import Optional, Union
+import logging
 
 from fastapi import APIRouter
 from fastapi_utils.cbv import cbv
@@ -27,6 +28,8 @@ from criadex.group import Group
 from criadex.index.base_api import ContentUploadConfig
 from criadex.index.schemas import Bundle, BundleConfig
 from criadex.schemas import GroupNotFoundError, DocumentExistsError
+
+logger = logging.getLogger(__name__)
 
 view = APIRouter()
 
@@ -93,7 +96,8 @@ class UploadContentRoute(CriaRoute):
                 message="Requested content already exists in the database."
             )
         except Exception as e:
-            # Catch any other unexpected errors
+            # Catch any other unexpected errors and log with traceback
+            logger.error(f"Error uploading content to group '{group_name}': {type(e).__name__}: {e}", exc_info=True)
             return self.ResponseModel(
                 code="ERROR",
                 status=500,

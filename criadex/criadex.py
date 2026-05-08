@@ -22,10 +22,11 @@ import time
 import uuid
 from typing import Optional
 import aiomysql
+from elasticsearch import NotFoundError as ESNotFoundError
 from criadex.bot.bot import Bot
 from criadex.cache.cache import Cache
 from criadex.database.api import GroupDatabaseAPI
-from criadex.schemas import MySQLCredentials, ElasticsearchCredentials, GroupConfig, GroupExistsError, IndexType, GroupNotFoundError, DocumentExistsError, DocumentNotFoundError
+from criadex.schemas import MySQLCredentials, ElasticsearchCredentials, GroupConfig, GroupExistsError, IndexType, GroupNotFoundError, DocumentExistsError, DocumentNotFoundError, IndexNotFoundError
 from criadex.database.tables.groups import GroupsModel
 from criadex.database.tables.documents import DocumentsModel
 from app.core.schemas import AppMode
@@ -171,22 +172,24 @@ class Criadex:
                 raise GroupExistsError() from ex
             raise
 
-        # Vector store index creation is often implicit on first insert.
-        # If Elasticsearch is temporarily unavailable, we keep the MySQL
-        # group so upstream services (e.g., CriaParse) can still rely on
-        # the group existing and retry ES operations later.
+        # Vector store index creation is critical - the embedding field MUST be dense_vector type
+        # If this fails, documents cannot be indexed/searched properly
         try:
             await self.vector_store.acreate_collection(
                 collection_name=config.name,
                 embedding_dims=self.embedding_dims,
             )
         except Exception as ex:
-            logging.warning(
-                "Criadex: failed to create Elasticsearch index for group '%s': %s. "
-                "Keeping MySQL group so dependent services can continue.",
+            # Index creation is critical - propagate the error so the group creation fails
+            logging.error(
+                "Criadex: CRITICAL - Failed to create Elasticsearch index for group '%s': %s. "
+                "Group creation failed. The group will not work for document indexing/search.",
                 config.name,
                 ex,
             )
+            # Delete the MySQL group since the index creation failed
+            await self.mysql_api.groups.delete(id=group.id)
+            raise
         await self._upsert_graph_state(
             group_name=config.name,
             status="NOT_BUILT",
@@ -404,14 +407,23 @@ class Criadex:
             return []
 
         def run_search():
+            index_name = group_name
+            if hasattr(self.vector_store, "_to_es_index_name"):
+                index_name = self.vector_store._to_es_index_name(group_name)
             return self.vector_store.es.search(
-                index=group_name,
+                index=index_name,
                 query={"match_all": {}},
                 size=size,
                 sort=[{"metadata.updated_at": {"order": "desc"}}],
             )
 
-        response = await asyncio.get_running_loop().run_in_executor(None, run_search)
+        try:
+            response = await asyncio.get_running_loop().run_in_executor(None, run_search)
+        except ESNotFoundError as exc:
+            raise IndexNotFoundError(
+                f"Elasticsearch index for group '{group_name}' not found. "
+                "The group's content index may have been lost. Re-upload content to rebuild the index."
+            ) from exc
         hits = response.get("hits", {}).get("hits", [])
         return [hit.get("_source", {}).get("text", "") for hit in hits if hit.get("_source", {}).get("text")]
 

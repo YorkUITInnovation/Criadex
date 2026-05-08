@@ -1,5 +1,6 @@
 import pytest
 import uuid
+import re
 from httpx import Response
 
 from app.controllers.schemas import APIResponse, SUCCESS, ERROR, MODEL_NOT_FOUND
@@ -32,6 +33,34 @@ def test_ragflow_vector_store_create_collection_uses_requested_dims(mock_elastic
     mock_elasticsearch_client.indices.create.assert_called_once()
     _, kwargs = mock_elasticsearch_client.indices.create.call_args
     assert kwargs["body"]["mappings"]["properties"]["embedding"]["dims"] == 1536
+
+
+def test_ragflow_vector_store_sanitizes_invalid_collection_name():
+    store = RagflowVectorStore(host="localhost", port=9200)
+    unsafe_name = "Moodle 5 laptop dev-The art of Art-document-index"
+
+    safe_name = store._to_es_index_name(unsafe_name)
+
+    assert " " not in safe_name
+    assert safe_name == safe_name.lower()
+    assert len(safe_name) <= 255
+    assert re.search(r"-[0-9a-f]{8}$", safe_name) is not None
+
+
+def test_ragflow_vector_store_insert_uses_sanitized_index_name(mock_elasticsearch_client):
+    store = RagflowVectorStore(host="localhost", port=9200)
+    unsafe_name = "Moodle 5 laptop dev-The art of Art-document-index"
+
+    # insert() now requires the target ES index to exist.
+    mock_elasticsearch_client.indices.exists.return_value = True
+    mock_elasticsearch_client.index.reset_mock()
+    store.insert(unsafe_name, "doc-1", [0.1, 0.2], "test text", {"source": "pytest"})
+
+    mock_elasticsearch_client.index.assert_called_once()
+    _, kwargs = mock_elasticsearch_client.index.call_args
+    used_index = kwargs["index"]
+    assert " " not in used_index
+    assert used_index == store._to_es_index_name(unsafe_name)
 
 @pytest.mark.asyncio
 async def test_cohere_rerank_positive(

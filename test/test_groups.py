@@ -4,6 +4,7 @@ import json
 import pytest
 from httpx import Response
 from unittest.mock import AsyncMock
+from elasticsearch import NotFoundError as ESNotFoundError
 
 from app.controllers.groups.about import GroupAboutResponse
 from app.controllers.groups.create import GroupCreateResponse
@@ -11,10 +12,16 @@ from app.controllers.groups.delete import GroupDeleteResponse
 from app.controllers.groups.graph import GraphBuildResponse, GraphSearchResponse, GraphStatusResponse
 from app.controllers.groups.query import GroupQueryResponse
 from criadex.index.base_api import ContentUploadConfig
+from criadex.index.ragflow_objects.vector_store import RagflowVectorStore
 from criadex.schemas import PartialGroupConfig
 from criadex.index.schemas import SearchConfig
 from .utils.content_utils import sample_document
 from .utils.test_client import CriaTestClient, assert_response_shape
+
+
+def _safe_index_name(group_name: str) -> str:
+    store = RagflowVectorStore(host="localhost", port=9200)
+    return store._to_es_index_name(group_name)
 
 
 @pytest.mark.asyncio
@@ -113,7 +120,7 @@ async def test_groups_query_positive(
     assert response.status_code == 200, "Failed to create test group for query test"
 
     # Manually add mock documents to mock_elasticsearch_client._data for the test group
-    mock_elasticsearch_client._data[test_group] = {
+    mock_elasticsearch_client._data[_safe_index_name(test_group)] = {
         "doc1": {
             "text": "Paris is the capital of France.",
             "metadata": {"source": "wiki", "updated_at": 1}
@@ -251,7 +258,7 @@ async def test_groups_graph_routes_positive(
     )
     assert response.status_code == 200, "Failed to create test group for graph routes test"
 
-    mock_elasticsearch_client._data[test_group] = {
+    mock_elasticsearch_client._data[_safe_index_name(test_group)] = {
         "doc1": {
             "text": "Midterm and final exam policy for computer science.",
             "metadata": {"source": "syllabus", "updated_at": 1}
@@ -415,7 +422,7 @@ async def test_groups_graph_search_fallback_on_ragflow_error(
     )
     assert create_response.status_code == 200
 
-    mock_elasticsearch_client._data[test_group] = {
+    mock_elasticsearch_client._data[_safe_index_name(test_group)] = {
         "doc1": {"text": "Grading rubric includes quizzes and exams.", "metadata": {"updated_at": 1}},
     }
 
@@ -480,7 +487,7 @@ async def test_groups_graph_search_auto_build_rebuilds_stale_graph(
     )
     assert create_response.status_code == 200
 
-    mock_elasticsearch_client._data[test_group] = {
+    mock_elasticsearch_client._data[_safe_index_name(test_group)] = {
         "doc1": {"text": "Course grade uses labs and final exam.", "metadata": {"updated_at": 1}},
     }
 
@@ -513,5 +520,147 @@ async def test_groups_graph_search_auto_build_rebuilds_stale_graph(
     assert search_data.graph_metadata.get("job_id") is not None
     assert search_data.graph_metadata.get("job_id") != first_build_data.job_id
 
+    delete_response = client.delete(f"/groups/{test_group}/delete", headers=sample_master_headers)
+    assert delete_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_groups_graph_search_fallback_uses_hashed_es_index_name(
+    client: CriaTestClient,
+    sample_master_headers: dict,
+    sample_llm_id: int,
+    sample_embedding_id: int,
+    sample_reranker_id: int,
+    mock_elasticsearch_client,
+) -> None:
+    test_group = "pytest-graph-hashed-index-" + str(uuid.uuid4())
+    create_payload = PartialGroupConfig(
+        type="DOCUMENT",
+        llm_model_id=sample_llm_id,
+        rerank_model_id=sample_reranker_id,
+        embedding_model_id=sample_embedding_id,
+    )
+    create_response = client.post(
+        f"/groups/{test_group}/create",
+        headers=sample_master_headers,
+        json=create_payload.model_dump(),
+    )
+    assert create_response.status_code == 200
+
+    expected_index_name = _safe_index_name(test_group)
+    mock_elasticsearch_client._data[expected_index_name] = {
+        "doc1": {"text": "Course policy has assignment and exam weights.", "metadata": {"updated_at": 1}},
+    }
+
+    original_search_impl = mock_elasticsearch_client.search.side_effect
+
+    def assert_hashed_index(**kwargs):
+        assert kwargs.get("index") == expected_index_name
+        return original_search_impl(**kwargs)
+
+    mock_elasticsearch_client.search.side_effect = assert_hashed_index
+
+    async def ready_ragflow_status(group_name: str, job_id=None):
+        return {
+            "group_name": group_name,
+            "graph": {
+                "status": "READY",
+                "source": "ragflow",
+                "node_count": 1,
+                "edge_count": 0,
+                "top_entities": [],
+                "fallback_reason": None,
+                "error": None,
+                "built_at": None,
+                "updated_at": None,
+            },
+            "job": {"job_id": "job-ragflow-ready", "state": "READY", "source": "ragflow", "progress": 100},
+        }
+
+    client.app.criadex.graph_status = ready_ragflow_status
+    client.app.criadex.graph_rag_client.graph_search = AsyncMock(side_effect=RuntimeError("ragflow graph unavailable"))
+
+    search_response = client.post(
+        f"/groups/{test_group}/graph_search",
+        headers=sample_master_headers,
+        json={"query": "How is grading weighted?", "top_k": 2, "auto_build": False},
+    )
+    search_data: GraphSearchResponse = assert_response_shape(search_response.json(), custom_shape=GraphSearchResponse)
+    assert search_data.status == 200
+    assert search_data.code == "SUCCESS"
+    assert search_data.graph_metadata["source"] == "fallback"
+
+    mock_elasticsearch_client.search.side_effect = None
+    delete_response = client.delete(f"/groups/{test_group}/delete", headers=sample_master_headers)
+    assert delete_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_groups_graph_search_fallback_missing_index_returns_404(
+    client: CriaTestClient,
+    sample_master_headers: dict,
+    sample_llm_id: int,
+    sample_embedding_id: int,
+    sample_reranker_id: int,
+    mock_elasticsearch_client,
+) -> None:
+    test_group = "pytest-graph-missing-index-" + str(uuid.uuid4())
+    create_payload = PartialGroupConfig(
+        type="DOCUMENT",
+        llm_model_id=sample_llm_id,
+        rerank_model_id=sample_reranker_id,
+        embedding_model_id=sample_embedding_id,
+    )
+    create_response = client.post(
+        f"/groups/{test_group}/create",
+        headers=sample_master_headers,
+        json=create_payload.model_dump(),
+    )
+    assert create_response.status_code == 200
+
+    def raise_missing_index(**kwargs):
+        raise ESNotFoundError(
+            message="index not found",
+            meta=None,
+            body={"error": {"type": "index_not_found_exception"}},
+        )
+
+    mock_elasticsearch_client.search.side_effect = raise_missing_index
+
+    async def ready_ragflow_status(group_name: str, job_id=None):
+        return {
+            "group_name": group_name,
+            "graph": {
+                "status": "READY",
+                "source": "ragflow",
+                "node_count": 1,
+                "edge_count": 0,
+                "top_entities": [],
+                "fallback_reason": None,
+                "error": None,
+                "built_at": None,
+                "updated_at": None,
+            },
+            "job": {"job_id": "job-ragflow-ready", "state": "READY", "source": "ragflow", "progress": 100},
+        }
+
+    client.app.criadex.graph_status = ready_ragflow_status
+    client.app.criadex.graph_rag_client.graph_search = AsyncMock(side_effect=RuntimeError("ragflow graph unavailable"))
+
+    search_response = client.post(
+        f"/groups/{test_group}/graph_search",
+        headers=sample_master_headers,
+        json={"query": "How is grading weighted?", "top_k": 2, "auto_build": False},
+    )
+    search_data: GraphSearchResponse = assert_response_shape(
+        search_response.json(),
+        custom_shape=GraphSearchResponse,
+        require_status=None,
+        require_code=None,
+    )
+    assert search_data.status == 404
+    assert search_data.code == "INDEX_NOT_FOUND"
+
+    mock_elasticsearch_client.search.side_effect = None
     delete_response = client.delete(f"/groups/{test_group}/delete", headers=sample_master_headers)
     assert delete_response.status_code == 200

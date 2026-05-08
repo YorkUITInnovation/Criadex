@@ -18,12 +18,26 @@ _active_aiomysql_connections = []
 
 # Original aiomysql.connect function
 _original_aiomysql_connect = None
+_original_aiomysql_connection_del = None
 
 # Monkeypatch aiomysql.connect to track connections
 def _monkeypatch_aiomysql_connect():
-    global _original_aiomysql_connect
+    global _original_aiomysql_connect, _original_aiomysql_connection_del
     import aiomysql
     _original_aiomysql_connect = aiomysql.connect
+    _original_aiomysql_connection_del = aiomysql.connection.Connection.__del__
+
+    def safe_connection_del(self):
+        try:
+            _original_aiomysql_connection_del(self)
+        except RuntimeError as ex:
+            if "Event loop is closed" not in str(ex):
+                raise
+        except Exception:
+            # Avoid noisy destructor-time errors in test teardown.
+            pass
+
+    aiomysql.connection.Connection.__del__ = safe_connection_del
 
     async def new_connect(*args, **kwargs):
         conn = await _original_aiomysql_connect(*args, **kwargs)
@@ -33,11 +47,13 @@ def _monkeypatch_aiomysql_connect():
 
 # Unmonkeypatch aiomysql.connect
 def _unmonkeypatch_aiomysql_connect():
-    global _original_aiomysql_connect
+    global _original_aiomysql_connect, _original_aiomysql_connection_del
     if _original_aiomysql_connect:
         import aiomysql
         aiomysql.connect = _original_aiomysql_connect
         _original_aiomysql_connect = None
+    # Keep the safe __del__ patch active until interpreter exit to avoid
+    # late garbage-collection teardown noise after pytest closes the loop.
 
 
 # ───────────────────────────────

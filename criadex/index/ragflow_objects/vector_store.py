@@ -12,12 +12,15 @@ You should have received a copy of the GNU General Public License along with Cri
 @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
 """
 
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch, NotFoundError as ESNotFoundError
+from criadex.schemas import IndexNotFoundError
 
 
 from typing import Any, Dict, List, Optional, Union
 import asyncio
 import json
+import hashlib
+import re
 
 class RagflowVectorStore:
     def __init__(self, host, port, username=None, password=None, index_name="criadex", group_name=None, embedding_dims=768):
@@ -33,62 +36,113 @@ class RagflowVectorStore:
         self.group_name = group_name
         self.embedding_dims = embedding_dims
 
+    def _to_es_index_name(self, collection_name: str) -> str:
+        """Convert logical group names into Elasticsearch-safe index names."""
+        base = re.sub(r"[^a-z0-9._-]+", "-", (collection_name or "").lower()).strip("-_.")
+        if not base:
+            base = "group"
+        digest = hashlib.sha1((collection_name or "group").encode("utf-8")).hexdigest()[:8]
+        # Keep names deterministic and under Elasticsearch index length limits.
+        safe = f"{base}-{digest}"[:255]
+        return safe
+
     def collection_exists(self, collection_name):
-        return self.es.indices.exists(index=collection_name)
+        return self.es.indices.exists(index=self._to_es_index_name(collection_name))
 
     async def acollection_exists(self, collection_name):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self.collection_exists, collection_name)
 
     def create_collection(self, collection_name, embedding_dims=None):
+        import logging
+        index_name = self._to_es_index_name(collection_name)
+        
+        # Check if index already exists
+        if self.es.indices.exists(index=index_name):
+            # Verify it has the dense_vector embedding field
+            try:
+                mappings = self.es.indices.get_mapping(index=index_name)
+                props = mappings[index_name].get('mappings', {}).get('properties', {})
+                embedding_field = props.get('embedding', {})
+                
+                # If embedding field doesn't have dense_vector type, we have a schema mismatch
+                if embedding_field.get('type') != 'dense_vector':
+                    logging.error(
+                        f"Index '{index_name}' exists but embedding field has wrong type: "
+                        f"{embedding_field.get('type')}. Expected 'dense_vector'. "
+                        f"Vector searches will fail. Delete the index and re-upload content."
+                    )
+            except Exception as e:
+                logging.warning(f"Could not verify index schema for '{index_name}': {e}")
+            return
+        
+        # Create the index with proper dense_vector mapping
         try:
-            if not self.es.indices.exists(index=collection_name):
-                resolved_dims = int(embedding_dims or self.embedding_dims or 768)
-                mapping = {
-                    "mappings": {
-                        "properties": {
-                            "metadata": {
-                                "properties": {
-                                    "group_name": {"type": "keyword"},
-                                    "group_id": {"type": "keyword"},
-                                    "file_name": {"type": "keyword"},
-                                    "updated_at": {"type": "date"},
-                                    "update_id": {"type": "keyword"}
-                                }
-                            },
-                            "embedding": {
-                                "type": "dense_vector",
-                                "dims": resolved_dims
+            resolved_dims = int(embedding_dims or self.embedding_dims or 768)
+            mapping = {
+                "mappings": {
+                    "properties": {
+                        "metadata": {
+                            "properties": {
+                                "group_name": {"type": "keyword"},
+                                "group_id": {"type": "keyword"},
+                                "file_name": {"type": "keyword"},
+                                "updated_at": {"type": "date"},
+                                "update_id": {"type": "keyword"}
                             }
-                        }
+                        },
+                        "embedding": {
+                            "type": "dense_vector",
+                            "dims": resolved_dims
+                        },
+                        "text": {"type": "text"},
+                        "collection_name": {"type": "keyword"}
                     }
                 }
-                self.es.indices.create(index=collection_name, body=mapping)
+            }
+            self.es.indices.create(index=index_name, body=mapping)
+            logging.info(f"Created Elasticsearch index '{index_name}' with {resolved_dims}-dim dense_vector embedding")
         except Exception as e:
-            # Log the error but don't fail the test
-            import logging
-            logging.warning(f"Failed to create Elasticsearch index {collection_name}: {e}")
-            # For testing purposes, we'll assume the index exists
-            pass
+            logging.error(
+                f"Failed to create Elasticsearch index '{index_name}' with proper dense_vector mapping: {e}. "
+                f"Subsequent vector searches will fail. "
+                f"Ensure Elasticsearch is running and 'dense_vector' type is supported."
+            )
+            raise
 
     async def acreate_collection(self, collection_name, embedding_dims=None):
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self.create_collection, collection_name, embedding_dims)
 
     def insert(self, collection_name, doc_id, embedding, text, metadata=None):
+        import logging
+        index_name = self._to_es_index_name(collection_name)
+        
+        # Verify index exists and has proper schema BEFORE inserting
+        if not self.es.indices.exists(index=index_name):
+            raise IndexNotFoundError(
+                f"Elasticsearch index '{index_name}' does not exist. "
+                f"Call create_collection() first to ensure the index is created with proper dense_vector mapping. "
+                f"Inserting without the index will cause Elasticsearch to auto-create it with wrong schema."
+            )
+        
         body = {"text": text, "embedding": embedding}
         if metadata:
             body["metadata"] = metadata
-        body["collection_name"] = collection_name # Add collection_name to the document
-        
-        self.es.index(index=collection_name, id=doc_id, document=body, refresh=True)
+        body["collection_name"] = collection_name
+
+        try:
+            self.es.index(index=index_name, id=doc_id, document=body, refresh=True)
+        except Exception as e:
+            logging.error(f"Failed to insert document '{doc_id}' into index '{index_name}': {e}")
+            raise
 
     async def ainsert(self, collection_name, doc_id, embedding, text, metadata=None):
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self.insert, collection_name, doc_id, embedding, text, metadata)
 
     def delete(self, collection_name, doc_id):
-        self.es.delete(index=collection_name, id=doc_id)
+        self.es.delete(index=self._to_es_index_name(collection_name), id=doc_id)
 
     async def adelete(self, collection_name, doc_id):
         loop = asyncio.get_event_loop()
@@ -102,8 +156,8 @@ class RagflowVectorStore:
                 }
             }
         }
-        response = self.es.delete_by_query(index=collection_name, body=query, refresh=True)
-        self.es.indices.refresh(index=collection_name)
+        response = self.es.delete_by_query(index=self._to_es_index_name(collection_name), body=query, refresh=True)
+        self.es.indices.refresh(index=self._to_es_index_name(collection_name))
 
     async def adelete_by_query(self, collection_name, field, value):
         loop = asyncio.get_event_loop()
@@ -204,7 +258,7 @@ class RagflowVectorStore:
         
 
         search_kwargs = {
-            "index": collection_name, # Use collection_name as the index
+            "index": self._to_es_index_name(collection_name),
             "query": main_query,
             "size": top_k,
             "sort": [
@@ -214,7 +268,13 @@ class RagflowVectorStore:
             "track_scores": True
         }
         
-        result = self.es.search(**search_kwargs)
+        try:
+            result = self.es.search(**search_kwargs)
+        except ESNotFoundError as exc:
+            raise IndexNotFoundError(
+                f"Elasticsearch index for group '{collection_name}' not found. "
+                "The group's content index may have been lost. Re-upload content to rebuild the index."
+            ) from exc
         return result["hits"]['hits']
 
     async def asearch(self, collection_name, query_embedding, top_k=10, query_filter=None, sort=None):

@@ -3,9 +3,9 @@ from typing import List, Optional, Union
 from fastapi import APIRouter, Body, Request
 from pydantic import BaseModel, Field
 
-from app.controllers.schemas import APIResponse, ERROR, GROUP_NOT_FOUND, SUCCESS
+from app.controllers.schemas import APIResponse, ERROR, GROUP_NOT_FOUND, INDEX_NOT_FOUND, SUCCESS
 from criadex.index.schemas import Asset, IndexResponse, SearchConfig, TextNodeWithScore
-from criadex.schemas import GroupNotFoundError
+from criadex.schemas import GroupNotFoundError, IndexNotFoundError
 
 view = APIRouter()
 
@@ -58,7 +58,7 @@ class GraphSearchConfig(SearchConfig):
 
 
 class GraphSearchResponse(APIResponse, IndexResponse):
-    code: Union[SUCCESS, GROUP_NOT_FOUND, ERROR]
+    code: Union[SUCCESS, GROUP_NOT_FOUND, INDEX_NOT_FOUND, ERROR]
     nodes: List[TextNodeWithScore] = Field(default_factory=list)
     assets: List[Asset] = Field(default_factory=list)
     search_units: int = 0
@@ -179,6 +179,12 @@ async def graph_search(
             code="GROUP_NOT_FOUND",
             status=404,
             message=f"The requested group '{group_name}' was not found!",
+        )
+    except IndexNotFoundError as e:
+        return GraphSearchResponse(
+            code="INDEX_NOT_FOUND",
+            status=404,
+            message=str(e),
         )
     except Exception as ex:
         return GraphSearchResponse(
