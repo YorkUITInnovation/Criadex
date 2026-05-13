@@ -188,7 +188,7 @@ class Criadex:
                 ex,
             )
             # Delete the MySQL group since the index creation failed
-            await self.mysql_api.groups.delete(id=group.id)
+            await self.mysql_api.groups.delete(name=config.name)
             raise
         await self._upsert_graph_state(
             group_name=config.name,
