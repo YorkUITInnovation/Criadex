@@ -22,6 +22,18 @@ class RagflowChatAgent:
     Handles errors gracefully with proper logging and fallback responses.
     """
 
+    @staticmethod
+    def _normalize_dialog_id(chat_id: str) -> str:
+        """Normalize external chat IDs to Ragflow dialog.id (varchar(32))."""
+        raw = str(chat_id or "").strip()
+        if not raw:
+            return ""
+        # Preserve already-normalized 32-char hex IDs.
+        if len(raw) == 32 and all(c in "0123456789abcdefABCDEF" for c in raw):
+            return raw.lower()
+        # Hash all other IDs (UUIDs, app-specific labels, etc.) to fit Ragflow schema.
+        return hashlib.md5(raw.encode()).hexdigest()[:32]
+
     async def ensure_dialog_exists(self, chat_id: str, tenant_id: str = None, llm_id: str = "gpt-3.5-turbo") -> bool:
         """
         Ensure a dialog exists in Ragflow for the given chat_id.
@@ -38,8 +50,7 @@ class RagflowChatAgent:
         try:
             import aiomysql
             
-            # Ragflow's dialog.id column is varchar(32), so hash the UUID to fit
-            dialog_id = hashlib.md5(chat_id.encode()).hexdigest()[:32]
+            dialog_id = self._normalize_dialog_id(chat_id)
             
             # Connect to Ragflow database
             connection = await aiomysql.connect(
@@ -126,10 +137,7 @@ class RagflowChatAgent:
         :return: Response dict with chat_response and usage
         :raises ValueError: If response validation fails
         """
-        if len(chat_id) == 36:
-            dialog_id = hashlib.md5(chat_id.encode()).hexdigest()[:32]
-        else:
-            dialog_id = chat_id
+        dialog_id = self._normalize_dialog_id(chat_id)
         url = RAGFLOW_API_URL_TEMPLATE.format(chat_id=dialog_id)
 
         headers = {}
