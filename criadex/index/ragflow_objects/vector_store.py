@@ -1,15 +1,17 @@
 """
+
 This file is part of Criadex.
 
 Criadex is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 Criadex is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with Criadex. If not, see <https://www.gnu.org/licenses/>.
 
-@package    Criadex
-@author     kiarash bashokian
-@copyright  2025 onwards York University (https://yorku.ca/)
-@repository https://github.com/YorkUITInnovation/Criadex
-@license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ @package    Criadex
+ @author     Kiarash Bashokian
+ @copyright  2024 onwards York University (https://yorku.ca/)
+ @repository https://github.com/YorkUITInnovation/Criadex
+ @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+
 """
 
 from elasticsearch import Elasticsearch, NotFoundError as ESNotFoundError
@@ -23,7 +25,7 @@ import hashlib
 import re
 
 class RagflowVectorStore:
-    def __init__(self, host, port, username=None, password=None, index_name="criadex", group_name=None, embedding_dims=768):
+    def __init__(self, host: str, port: int, username: Optional[str] = None, password: Optional[str] = None, index_name: str = "criadex", group_name: Optional[str] = None, embedding_dims: int = 768) -> None:
         self.es = Elasticsearch(
             hosts=[{"host": host, "port": port, "scheme": "http"}],
             basic_auth=(username, password) if username and password else None,
@@ -46,14 +48,14 @@ class RagflowVectorStore:
         safe = f"{base}-{digest}"[:255]
         return safe
 
-    def collection_exists(self, collection_name):
+    def collection_exists(self, collection_name: str) -> bool:
         return self.es.indices.exists(index=self._to_es_index_name(collection_name))
 
-    async def acollection_exists(self, collection_name):
+    async def acollection_exists(self, collection_name: str) -> bool:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self.collection_exists, collection_name)
 
-    def create_collection(self, collection_name, embedding_dims=None):
+    def create_collection(self, collection_name: str, embedding_dims: Optional[int] = None) -> None:
         import logging
         index_name = self._to_es_index_name(collection_name)
         
@@ -110,11 +112,22 @@ class RagflowVectorStore:
             )
             raise
 
-    async def acreate_collection(self, collection_name, embedding_dims=None):
+    async def acreate_collection(self, collection_name: str, embedding_dims: Optional[int] = None) -> None:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self.create_collection, collection_name, embedding_dims)
 
-    def insert(self, collection_name, doc_id, embedding, text, metadata=None):
+    def delete_collection(self, collection_name: str) -> bool:
+        index_name = self._to_es_index_name(collection_name)
+        if not self.es.indices.exists(index=index_name):
+            return False
+        self.es.indices.delete(index=index_name)
+        return True
+
+    async def adelete_collection(self, collection_name: str) -> bool:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.delete_collection, collection_name)
+
+    def insert(self, collection_name: str, doc_id: str, embedding: List[float], text: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         import logging
         index_name = self._to_es_index_name(collection_name)
         
@@ -132,23 +145,31 @@ class RagflowVectorStore:
         body["collection_name"] = collection_name
 
         try:
-            self.es.index(index=index_name, id=doc_id, document=body, refresh=True)
+            # Keep insert lightweight during bulk ingest; callers can refresh per batch.
+            self.es.index(index=index_name, id=doc_id, document=body, refresh=False)
         except Exception as e:
             logging.error(f"Failed to insert document '{doc_id}' into index '{index_name}': {e}")
             raise
 
-    async def ainsert(self, collection_name, doc_id, embedding, text, metadata=None):
+    async def ainsert(self, collection_name: str, doc_id: str, embedding: List[float], text: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self.insert, collection_name, doc_id, embedding, text, metadata)
 
-    def delete(self, collection_name, doc_id):
+    def refresh_collection(self, collection_name: str) -> None:
+        self.es.indices.refresh(index=self._to_es_index_name(collection_name))
+
+    async def arefresh_collection(self, collection_name: str) -> None:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self.refresh_collection, collection_name)
+
+    def delete(self, collection_name: str, doc_id: str) -> None:
         self.es.delete(index=self._to_es_index_name(collection_name), id=doc_id)
 
-    async def adelete(self, collection_name, doc_id):
+    async def adelete(self, collection_name: str, doc_id: str) -> None:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self.delete, collection_name, doc_id)
 
-    def delete_by_query(self, collection_name, field, value):
+    def delete_by_query(self, collection_name: str, field: str, value: Any) -> None:
         query = {
             "query": {
                 "term": {
@@ -156,10 +177,9 @@ class RagflowVectorStore:
                 }
             }
         }
-        response = self.es.delete_by_query(index=self._to_es_index_name(collection_name), body=query, refresh=True)
-        self.es.indices.refresh(index=self._to_es_index_name(collection_name))
+        self.es.delete_by_query(index=self._to_es_index_name(collection_name), body=query, refresh=True)
 
-    async def adelete_by_query(self, collection_name, field, value):
+    async def adelete_by_query(self, collection_name: str, field: str, value: Any) -> None:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self.delete_by_query, collection_name, field, value)
 
@@ -232,7 +252,7 @@ class RagflowVectorStore:
 
         return {"bool": bool_query}
 
-    def search(self, collection_name, query_embedding, top_k=10, query_filter=None, sort=None):
+    def search(self, collection_name: str, query_embedding: List[float], top_k: int = 10, query_filter: Optional[Dict[str, Any]] = None, sort: Any = None) -> List[Dict[str, Any]]:
         normalized = self._normalize_metadata_filter(query_filter or {})
 
         # Construct the main query using function_score.
@@ -277,11 +297,11 @@ class RagflowVectorStore:
             ) from exc
         return result["hits"]['hits']
 
-    async def asearch(self, collection_name, query_embedding, top_k=10, query_filter=None, sort=None):
+    async def asearch(self, collection_name: str, query_embedding: List[float], top_k: int = 10, query_filter: Optional[Dict[str, Any]] = None, sort: Any = None) -> List[Dict[str, Any]]:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self.search, collection_name, query_embedding, top_k, query_filter, sort)
 
-    def add_metadata(self, doc: dict, file_name=None, created_at=None, group_id=None):
+    def add_metadata(self, doc: dict, file_name: Optional[str] = None, created_at: Optional[int] = None, group_id: Optional[str] = None) -> dict:
         # Add file/group metadata
         if file_name:
             doc["file_name"] = file_name

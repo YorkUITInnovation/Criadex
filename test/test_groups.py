@@ -89,6 +89,94 @@ async def test_groups_positive(
     response_data: GroupAboutResponse = assert_response_shape(response.json(), custom_shape=GroupAboutResponse, require_status=None, require_code=None)
     assert response_data.status == 404, "The test group still exists after deletion!"
 
+
+@pytest.mark.asyncio
+async def test_groups_delete_clears_elasticsearch_collection(
+        client: CriaTestClient,
+        sample_master_headers: dict,
+        sample_llm_id: int,
+        sample_embedding_id: int,
+        sample_reranker_id: int,
+        mock_elasticsearch_client,
+) -> None:
+    test_group: str = "pytest-clean-" + str(uuid.uuid4())
+    test_payload: PartialGroupConfig = PartialGroupConfig(
+        type="DOCUMENT",
+        llm_model_id=sample_llm_id,
+        rerank_model_id=sample_reranker_id,
+        embedding_model_id=sample_embedding_id
+    )
+
+    create_response = client.post(
+        f"/groups/{test_group}/create",
+        headers=sample_master_headers,
+        json=test_payload.model_dump()
+    )
+    assert create_response.status_code == 200
+
+    es_index_name = _safe_index_name(test_group)
+    mock_elasticsearch_client._data[es_index_name] = {
+        "stale-doc": {
+            "text": "stale data from previous lifecycle",
+            "metadata": {"file_name": "stale.txt"},
+        }
+    }
+
+    delete_response = client.delete(f"/groups/{test_group}/delete", headers=sample_master_headers)
+    delete_data: GroupDeleteResponse = assert_response_shape(delete_response.json(), custom_shape=GroupDeleteResponse)
+    assert delete_data.status == 200 and delete_data.code == "SUCCESS"
+
+    assert es_index_name not in mock_elasticsearch_client._data
+
+
+@pytest.mark.asyncio
+async def test_groups_delete_aborts_when_elasticsearch_delete_fails(
+        client: CriaTestClient,
+        sample_master_headers: dict,
+        sample_llm_id: int,
+        sample_embedding_id: int,
+        sample_reranker_id: int,
+) -> None:
+    test_group: str = "pytest-delete-fail-" + str(uuid.uuid4())
+    test_payload: PartialGroupConfig = PartialGroupConfig(
+        type="DOCUMENT",
+        llm_model_id=sample_llm_id,
+        rerank_model_id=sample_reranker_id,
+        embedding_model_id=sample_embedding_id
+    )
+
+    create_response = client.post(
+        f"/groups/{test_group}/create",
+        headers=sample_master_headers,
+        json=test_payload.model_dump()
+    )
+    assert create_response.status_code == 200
+
+    original_delete_collection = client.app.criadex.vector_store.adelete_collection
+    client.app.criadex.vector_store.adelete_collection = AsyncMock(side_effect=RuntimeError("forced delete failure"))
+
+    try:
+        delete_response = client.delete(f"/groups/{test_group}/delete", headers=sample_master_headers)
+        delete_data: GroupDeleteResponse = assert_response_shape(
+            delete_response.json(),
+            custom_shape=GroupDeleteResponse,
+            require_status=None,
+            require_code=None,
+        )
+        assert delete_data.status == 500
+        assert delete_data.code == "ERROR"
+    finally:
+        client.app.criadex.vector_store.adelete_collection = original_delete_collection
+
+    about_response = client.get(f"/groups/{test_group}/about", headers=sample_master_headers)
+    about_data: GroupAboutResponse = assert_response_shape(about_response.json(), custom_shape=GroupAboutResponse)
+    assert about_data.status == 200
+    assert about_data.code == "SUCCESS"
+
+    cleanup = client.delete(f"/groups/{test_group}/delete", headers=sample_master_headers)
+    cleanup_data: GroupDeleteResponse = assert_response_shape(cleanup.json(), custom_shape=GroupDeleteResponse)
+    assert cleanup_data.status == 200
+
 @pytest.mark.asyncio
 async def test_groups_query_positive(
         client: CriaTestClient,

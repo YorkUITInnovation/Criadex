@@ -16,11 +16,13 @@ You should have received a copy of the GNU General Public License along with Cri
 
 
 import asyncio
+import gc
 import json
 import logging
+import os
 import time
 import uuid
-from typing import Optional
+from typing import Iterable, Iterator, Optional, Tuple
 import aiomysql
 from elasticsearch import NotFoundError as ESNotFoundError
 from criadex.bot.bot import Bot
@@ -71,6 +73,38 @@ class Criadex:
         self.graph_store = GroupGraphStore()
         self.graph_rag_client = RagflowGraphRAGClient()
         self._graph_job_tasks: dict[str, asyncio.Task] = {}
+        self._ingest_batch_size = max(1, int(os.getenv("CRIADEX_INGEST_BATCH_SIZE", "32")))
+        self._ingest_gc_every_batches = max(0, int(os.getenv("CRIADEX_INGEST_GC_EVERY_BATCHES", "4")))
+
+    @staticmethod
+    def _iter_file_entries(file_contents: dict) -> Iterator[Tuple[str, dict]]:
+        if 'nodes' in file_contents:
+            for node_data in file_contents.get('nodes') or []:
+                if isinstance(node_data, dict):
+                    text = str(node_data.get('text', ''))
+                    metadata = dict(node_data.get('metadata') or {})
+                else:
+                    text = str(getattr(node_data, 'text', ''))
+                    metadata = dict(getattr(node_data, 'metadata', {}) or {})
+                yield text, metadata
+            return
+
+        if 'questions' in file_contents:
+            for question in file_contents.get('questions') or []:
+                yield str(question), {}
+            if 'answer' in file_contents:
+                yield str(file_contents['answer']), {}
+
+    @staticmethod
+    def _batch_iterable(items: Iterable[Tuple[int, Tuple[str, dict]]], batch_size: int) -> Iterator[list[Tuple[int, Tuple[str, dict]]]]:
+        batch: list[Tuple[int, Tuple[str, dict]]] = []
+        for item in items:
+            batch.append(item)
+            if len(batch) >= batch_size:
+                yield batch
+                batch = []
+        if batch:
+            yield batch
 
     async def initialize(self) -> None:
         """
@@ -175,6 +209,17 @@ class Criadex:
         # Vector store index creation is critical - the embedding field MUST be dense_vector type
         # If this fails, documents cannot be indexed/searched properly
         try:
+            # Reused group names must start from a clean vector collection.
+            # Older deployments may have left stale indices behind after delete.
+            await self.vector_store.adelete_collection(collection_name=config.name)
+        except Exception as ex:
+            logging.warning(
+                "Criadex: could not pre-clean Elasticsearch index for group '%s': %s",
+                config.name,
+                ex,
+            )
+
+        try:
             await self.vector_store.acreate_collection(
                 collection_name=config.name,
                 embedding_dims=self.embedding_dims,
@@ -226,6 +271,20 @@ class Criadex:
 
         group_id: int = (await self.about(name=name)).id
 
+        # Delete the backing vector collection first so we do not leave stale
+        # Elasticsearch data behind when groups are recreated with the same name.
+        try:
+            await self.vector_store.adelete_collection(collection_name=name)
+        except Exception as ex:
+            logging.error(
+                "Criadex: failed deleting Elasticsearch index for group '%s': %s",
+                name,
+                ex,
+            )
+            raise RuntimeError(
+                f"Failed to delete Elasticsearch collection for group '{name}'"
+            ) from ex
+
         # Delete MySQL documents and assets
         await self.mysql_api.assets.delete_all_group_assets(group_id=group_id)
         await self.mysql_api.documents.delete_all(group_id=group_id)
@@ -276,46 +335,36 @@ class Criadex:
             raise DocumentExistsError()
 
         total_tokens = 0
-        nodes_to_insert = []
+        entry_stream = enumerate(self._iter_file_entries(file_contents=file_contents))
 
-        if 'nodes' in file_contents:
-            doc_config = DocumentConfig(**file_contents)
-            for node in doc_config.nodes:
-                # Preserve the original metadata from the node
-                node_data = {
-                    'text': node.text, 
-                    'metadata': node.metadata.copy() if node.metadata else {}
-                }
-                nodes_to_insert.append(node_data)
-        elif 'questions' in file_contents:
-            # For QuestionConfig, create a node for each question and the answer
-            for question_text in file_contents['questions']:
-                nodes_to_insert.append({'text': question_text, 'metadata': {}, 'type': 'NarrativeText'})
-            if 'answer' in file_contents:
-                nodes_to_insert.append({'text': file_contents['answer'], 'metadata': {}, 'type': 'NarrativeText'})
+        for batch_number, batch in enumerate(self._batch_iterable(entry_stream, self._ingest_batch_size), start=1):
+            for i, (text, metadata) in batch:
+                merged_metadata = dict(metadata or {})
+                merged_metadata.update(file_metadata)
+                merged_metadata.update({
+                    'file_name': file_name,
+                    'updated_at': int(time.time() * 1000)
+                })
 
-        for i, node_data in enumerate(nodes_to_insert):
-            text = node_data['text']
-            
-            # Start with the node's existing metadata, then add system metadata and file_metadata
-            metadata = node_data.get('metadata', {}).copy()
-            metadata.update(file_metadata) # <--- Add this line to merge file_metadata
-            metadata.update({
-                'file_name': file_name,
-                'updated_at': int(time.time() * 1000)
-            })
-            
-            embedding = self.embedder.embed(text)
-            total_tokens += len(text.split())
-            doc_id = f"{file_name}-{i}"
+                embedding = self.embedder.embed(text)
+                total_tokens += len(text.split())
+                doc_id = f"{file_name}-{i}"
 
-            await self.vector_store.ainsert(
-                collection_name=group_name,
-                doc_id=doc_id,
-                embedding=embedding,
-                text=text,
-                metadata=metadata
-            )
+                await self.vector_store.ainsert(
+                    collection_name=group_name,
+                    doc_id=doc_id,
+                    embedding=embedding,
+                    text=text,
+                    metadata=merged_metadata
+                )
+
+            # Refresh once per batch to reduce Elasticsearch memory churn during large ingests.
+            refresh_collection = getattr(self.vector_store, "arefresh_collection", None)
+            if callable(refresh_collection):
+                await refresh_collection(collection_name=group_name)
+
+            if self._ingest_gc_every_batches and batch_number % self._ingest_gc_every_batches == 0:
+                gc.collect()
 
         await self.mysql_api.documents.insert(document_name=file_name, group_id=group_id)
         await self.mark_graph_stale(group_name=group_name, reason="content_uploaded")
@@ -402,30 +451,64 @@ class Criadex:
         
         return results
 
-    async def _group_documents(self, group_name: str, size: int = 500) -> list[str]:
+    async def _group_documents(self, group_name: str, size: int = 200) -> list[str]:
         if self.vector_store is None or getattr(self.vector_store, "es", None) is None:
             return []
 
-        def run_search():
+        max_docs = max(1, int(getattr(config, "GRAPH_FALLBACK_MAX_DOCS", 300)))
+        max_doc_chars = max(256, int(getattr(config, "GRAPH_FALLBACK_MAX_DOC_CHARS", 4000)))
+
+        def run_search(offset: int, page_size: int):
             index_name = group_name
             if hasattr(self.vector_store, "_to_es_index_name"):
                 index_name = self.vector_store._to_es_index_name(group_name)
             return self.vector_store.es.search(
                 index=index_name,
                 query={"match_all": {}},
-                size=size,
+                size=page_size,
+                from_=offset,
+                _source=["text"],
                 sort=[{"metadata.updated_at": {"order": "desc"}}],
             )
 
-        try:
-            response = await asyncio.get_running_loop().run_in_executor(None, run_search)
-        except ESNotFoundError as exc:
-            raise IndexNotFoundError(
-                f"Elasticsearch index for group '{group_name}' not found. "
-                "The group's content index may have been lost. Re-upload content to rebuild the index."
-            ) from exc
-        hits = response.get("hits", {}).get("hits", [])
-        return [hit.get("_source", {}).get("text", "") for hit in hits if hit.get("_source", {}).get("text")]
+        collected: list[str] = []
+        offset = 0
+        page_size = max(1, min(size, max_docs))
+
+        while len(collected) < max_docs:
+            remaining = max_docs - len(collected)
+            current_page_size = min(page_size, remaining)
+            try:
+                response = await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    run_search,
+                    offset,
+                    current_page_size,
+                )
+            except ESNotFoundError as exc:
+                raise IndexNotFoundError(
+                    f"Elasticsearch index for group '{group_name}' not found. "
+                    "The group's content index may have been lost. Re-upload content to rebuild the index."
+                ) from exc
+
+            hits = response.get("hits", {}).get("hits", [])
+            if not hits:
+                break
+
+            for hit in hits:
+                text = hit.get("_source", {}).get("text", "")
+                if not text:
+                    continue
+                collected.append(str(text)[:max_doc_chars])
+                if len(collected) >= max_docs:
+                    break
+
+            if len(hits) < current_page_size:
+                break
+
+            offset += len(hits)
+
+        return collected
 
     async def _recover_graph_jobs(self) -> None:
         now = int(time.time() * 1000)
@@ -770,6 +853,7 @@ class Criadex:
         else:
             task = asyncio.create_task(self._run_graph_build_job(job_id=job_id, group_name=group_name))
             self._graph_job_tasks[job_id] = task
+            task.add_done_callback(lambda _t, tracked_job_id=job_id: self._graph_job_tasks.pop(tracked_job_id, None))
 
         job = await self._job_by_id(job_id=job_id)
         return job or {"job_id": job_id, "group_name": group_name, "state": "QUEUED"}

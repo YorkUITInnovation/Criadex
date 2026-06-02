@@ -1,3 +1,20 @@
+"""
+
+This file is part of Criadex.
+
+Criadex is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+Criadex is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+You should have received a copy of the GNU General Public License along with Criadex. If not, see <https://www.gnu.org/licenses/>.
+
+ @package    Criadex
+ @author     Kiarash Bashokian
+ @copyright  2024 onwards York University (https://yorku.ca/)
+ @repository https://github.com/YorkUITInnovation/Criadex
+ @license    https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+
+"""
+
+
 import httpx
 import json
 import os
@@ -21,6 +38,62 @@ class RagflowChatAgent:
     Agent for communicating with Ragflow's OpenAI-compatible chat endpoint.
     Handles errors gracefully with proper logging and fallback responses.
     """
+
+    # Keep a process-local mapping when Ragflow rejects ownership for a dialog.
+    # This allows subsequent turns to reuse a proven dialog ID.
+    _chat_aliases: dict[str, str] = {}
+
+    @classmethod
+    def _effective_dialog_id(cls, chat_id: str) -> str:
+        alias = cls._chat_aliases.get(str(chat_id or ""))
+        if alias:
+            return alias
+        return cls._normalize_dialog_id(chat_id)
+
+    @staticmethod
+    def _build_agent_response(ragflow_response: dict) -> dict:
+        """Normalize Ragflow response into the agent response envelope."""
+        if "choices" not in ragflow_response or not ragflow_response["choices"]:
+            error_message = ragflow_response.get("message", "Invalid response from Ragflow API")
+            logger.error(f"Ragflow API error: 'choices' key missing or empty. Message: {error_message}")
+            logger.error(f"Ragflow API raw response: {ragflow_response}")
+            raise ValueError(error_message)
+
+        assistant_content = ragflow_response["choices"][0]["message"]["content"]
+
+        chat_message = {
+            "role": "assistant",
+            "blocks": [{"block_type": "text", "text": assistant_content}],
+            "additional_kwargs": {},
+            "metadata": {}
+        }
+
+        chat_response = {
+            "message": chat_message,
+            "raw": ragflow_response
+        }
+
+        return {
+            "chat_response": chat_response,
+            "usage": ragflow_response.get("usage", {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0
+            })
+        }
+
+    @staticmethod
+    def _is_chat_ownership_error(error_payload: dict | None, message: str) -> bool:
+        msg = (message or "").lower()
+        if "you don't own the chat" in msg:
+            return True
+        if isinstance(error_payload, dict):
+            payload_msg = str(error_payload.get("message", "")).lower()
+            if "you don't own the chat" in payload_msg:
+                return True
+            if str(error_payload.get("code", "")) == "102":
+                return True
+        return False
 
     @staticmethod
     def _normalize_dialog_id(chat_id: str) -> str:
@@ -137,7 +210,7 @@ class RagflowChatAgent:
         :return: Response dict with chat_response and usage
         :raises ValueError: If response validation fails
         """
-        dialog_id = self._normalize_dialog_id(chat_id)
+        dialog_id = self._effective_dialog_id(chat_id)
         url = RAGFLOW_API_URL_TEMPLATE.format(chat_id=dialog_id)
 
         headers = {}
@@ -160,40 +233,7 @@ class RagflowChatAgent:
                 response = await client.post(url, json=payload, headers=headers, timeout=30)
                 response.raise_for_status()
                 ragflow_response = response.json()
-
-            # Validate response structure
-            if "choices" not in ragflow_response or not ragflow_response["choices"]:
-                error_message = ragflow_response.get("message", "Invalid response from Ragflow API")
-                logger.error(f"Ragflow API error: 'choices' key missing or empty. Message: {error_message}")
-                logger.error(f"Ragflow API raw response: {ragflow_response}")
-                raise ValueError(error_message)
-
-            # Extract response content
-            assistant_content = ragflow_response["choices"][0]["message"]["content"]
-
-            # Build standardized response
-            chat_message = {
-                "role": "assistant",
-                "blocks": [{"block_type": "text", "text": assistant_content}],
-                "additional_kwargs": {},
-                "metadata": {}
-            }
-
-            chat_response = {
-                "message": chat_message,
-                "raw": ragflow_response
-            }
-
-            agent_response = {
-                "chat_response": chat_response,
-                "usage": ragflow_response.get("usage", {
-                    "prompt_tokens": 0,
-                    "completion_tokens": 0,
-                    "total_tokens": 0
-                })
-            }
-
-            return agent_response
+            return self._build_agent_response(ragflow_response)
 
         except httpx.ConnectError as e:
             error_message = f"Connection to Ragflow API failed at {url}"
@@ -201,9 +241,28 @@ class RagflowChatAgent:
             logger.error(f"Underlying error: {e}", exc_info=True)
             raise ValueError(error_message)
 
+        except httpx.TimeoutException as e:
+            logger.warning(
+                "Ragflow API timeout for chat_id=%s at %s: %s",
+                chat_id,
+                url,
+                e,
+            )
+            raise ValueError("Ragflow API timed out")
+
+        except httpx.RequestError as e:
+            logger.warning(
+                "Ragflow API request error for chat_id=%s at %s: %s",
+                chat_id,
+                url,
+                e,
+            )
+            raise ValueError("Ragflow API temporarily unavailable")
+
         except httpx.HTTPStatusError as e:
             error_message = f"Ragflow API returned error {e.response.status_code}: {e.response.reason_phrase}"
             logger.error(f"Ragflow HTTP error: {error_message}")
+            raw_response = None
             try:
                 raw_response = e.response.json()
                 logger.error(f"Ragflow API response: {raw_response}")
@@ -214,9 +273,40 @@ class RagflowChatAgent:
                 raw_response = e.response.text
                 logger.error(f"Ragflow API response (not JSON): {raw_response}")
 
+            if self._is_chat_ownership_error(raw_response if isinstance(raw_response, dict) else None, error_message):
+                logger.warning(
+                    "Ragflow ownership conflict for chat_id=%s (dialog_id=%s). Rebinding dialog and retrying once.",
+                    chat_id,
+                    dialog_id,
+                )
+                rebound_dialog_id = hashlib.md5(f"{chat_id}:{int(time.time()*1000)}".encode()).hexdigest()[:32]
+                ensured = await self.ensure_dialog_exists(rebound_dialog_id, tenant_id=RAGFLOW_TENANT_ID)
+                if ensured:
+                    retry_url = RAGFLOW_API_URL_TEMPLATE.format(chat_id=rebound_dialog_id)
+                    try:
+                        async with httpx.AsyncClient() as client:
+                            retry_response = await client.post(retry_url, json=payload, headers=headers, timeout=30)
+                            retry_response.raise_for_status()
+                            retry_json = retry_response.json()
+                        # Persist alias so future turns for same external chat_id use the rebound dialog.
+                        self._chat_aliases[str(chat_id)] = rebound_dialog_id
+                        return self._build_agent_response(retry_json)
+                    except Exception as retry_exc:
+                        logger.error(
+                            "Ragflow chat retry after ownership conflict failed for chat_id=%s rebound_dialog_id=%s: %s",
+                            chat_id,
+                            rebound_dialog_id,
+                            retry_exc,
+                        )
+                else:
+                    logger.error(
+                        "Failed to create rebound dialog for chat_id=%s after ownership conflict.",
+                        chat_id,
+                    )
+
             raise ValueError(error_message)
 
-        except (httpx.RequestError, json.JSONDecodeError, KeyError) as e:
+        except (json.JSONDecodeError, KeyError) as e:
             error_message = f"Unexpected error calling Ragflow API: {str(e)}"
             logger.error(error_message, exc_info=True)
             raise ValueError(error_message)

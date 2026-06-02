@@ -68,6 +68,11 @@ def pytest_configure(config):
     mock_es.indices = MagicMock()
     mock_es.indices.exists.return_value = True
     mock_es.indices.create.return_value = {'acknowledged': True}
+    def mock_indices_delete(index, **kwargs):
+        if index in mock_es._data:
+            del mock_es._data[index]
+        return {'acknowledged': True}
+    mock_es.indices.delete.side_effect = mock_indices_delete
     def mock_index(index, document, id, **kwargs):
         if index not in mock_es._data:
             mock_es._data[index] = {}
