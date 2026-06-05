@@ -122,6 +122,9 @@ class Criadex:
         self.mysql_api = GroupDatabaseAPI(self.mysql_pool)
         await self.mysql_api.initialize()
 
+        from criadex.migrations.runner import MigrationRunner
+        await MigrationRunner(self.mysql_pool).run_pending()
+
         # Populate default models if empty and not in testing mode
         if config.APP_MODE != AppMode.TESTING:
             await self.mysql_api.cohere_models.truncate()
@@ -1018,6 +1021,20 @@ class Criadex:
         :return: Whether the model exists
         """
         return await self.mysql_api.cohere_models.exists(model_id=model_id)
+
+    async def exists_generic_model(self, model_id: int) -> bool:
+        """Check if a generic provider model exists by ID."""
+        return await self.mysql_api.generic_models.exists(model_id=model_id)
+
+    async def exists_model(self, model_id: int) -> bool:
+        """Check if a model exists in any provider registry table."""
+        if model_id <= 0:
+            return False
+        if await self.exists_azure_model(model_id):
+            return True
+        if await self.exists_cohere_model(model_id):
+            return True
+        return await self.exists_generic_model(model_id)
 
     async def about_azure_model(self, model_id: int) -> AzureModelsModel:
         """

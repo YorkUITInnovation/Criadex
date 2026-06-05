@@ -30,6 +30,7 @@ FROM        with_packages AS final
 
 COPY        ./app ./app
 COPY        ./criadex ./criadex
+COPY        ./migrations ./migrations
 
 #           START SERVER
 

@@ -15,7 +15,7 @@ You should have received a copy of the GNU General Public License along with Cri
 """
 
 from app.core.route import CriaRouter
-from . import azure_models, cohere_models, generic_models, list
+from . import azure_models, cohere_models, generic_models, list, dedupe
 
 router = CriaRouter()
 
@@ -24,4 +24,5 @@ router.include_views(
     cohere_models.router,
     generic_models.router,
     list.view,
+    dedupe.view,
 )

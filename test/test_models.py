@@ -114,12 +114,13 @@ async def test_generic_models_crud_round_trip(
     - DELETE /models/{provider_type}/{model_id}/delete
     """
     provider_type = "ollama"
+    api_model = f"llama3-8b-{uuid.uuid4().hex[:8]}"
 
     # 1) Create a generic model
     create_body = {
         "api_base_url": "http://ollama:11434",
         "api_key": "test-key",
-        "api_model": "llama3:8b",
+        "api_model": api_model,
         "extra_param": "extra-value",
     }
     create_response = client.post(
@@ -279,21 +280,70 @@ async def test_generic_provider_list_endpoint(
         sample_master_headers: dict
 ) -> None:
     provider_type = "ollama"
+    api_model = f"llama3-list-{uuid.uuid4().hex[:8]}"
     create_response = client.post(
         f"/models/{provider_type}/create",
         headers=sample_master_headers,
         json={
             "api_base_url": "http://ollama:11434",
-            "api_model": "llama3:8b",
+            "api_model": api_model,
         },
     )
     create_data: APIResponse = assert_response_shape(create_response.json())
     assert create_data.status == 200
+    model_id = create_response.json()["model"]["id"]
 
-    list_response = client.get(
-        f"/models/{provider_type}/list",
+    try:
+        list_response = client.get(
+            f"/models/{provider_type}/list",
+            headers=sample_master_headers,
+        )
+        list_data: APIResponse = assert_response_shape(list_response.json())
+        assert list_data.status == 200
+        models = list_response.json().get("models", [])
+        assert any(
+            model["provider_type"] == provider_type
+            and (model.get("config") or {}).get("api_model") == api_model
+            for model in models
+        )
+    finally:
+        client.delete(
+            f"/models/{provider_type}/{model_id}/delete",
+            headers=sample_master_headers,
+        )
+
+
+@pytest.mark.asyncio
+async def test_generic_model_create_is_idempotent(
+        client: CriaTestClient,
+        sample_master_headers: dict
+) -> None:
+    provider_type = "ollama"
+    api_model = f"llama3-idem-{uuid.uuid4().hex[:8]}"
+    payload = {
+        "api_base_url": "http://ollama:11434",
+        "api_model": api_model,
+    }
+
+    first = client.post(
+        f"/models/{provider_type}/create",
+        headers=sample_master_headers,
+        json=payload,
+    )
+    first_data: APIResponse = assert_response_shape(first.json())
+    assert first_data.status == 200
+    first_id = first.json()["model"]["id"]
+
+    second = client.post(
+        f"/models/{provider_type}/create",
+        headers=sample_master_headers,
+        json=payload,
+    )
+    second_data: APIResponse = assert_response_shape(second.json())
+    assert second_data.status == 200
+    assert second.json()["model"]["id"] == first_id
+
+    client.delete(
+        f"/models/{provider_type}/{first_id}/delete",
         headers=sample_master_headers,
     )
-    list_data: APIResponse = assert_response_shape(list_response.json())
-    assert list_data.status == 200
-    assert any(model["provider_type"] == provider_type for model in list_response.json().get("models", []))
