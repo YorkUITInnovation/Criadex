@@ -125,24 +125,35 @@ class Criadex:
         from criadex.migrations.runner import MigrationRunner
         await MigrationRunner(self.mysql_pool).run_pending()
 
-        # Populate default models if empty and not in testing mode
+        # Seed catalog templates only when tables are empty (non-testing).
         if config.APP_MODE != AppMode.TESTING:
-            await self.mysql_api.cohere_models.truncate()
-            for model_name in COHERE_MODELS.__args__:
-                await self.mysql_api.cohere_models.insert(
-                    CohereModelsBaseModel(
-                        api_model=model_name,
-                        api_key=""
+            existing_cohere = await self.mysql_api.cohere_models.get_all()
+            if not existing_cohere:
+                for model_name in COHERE_MODELS.__args__:
+                    await self.mysql_api.cohere_models.insert(
+                        CohereModelsBaseModel(
+                            api_model=model_name,
+                            api_key=""
+                        )
                     )
-                )
-            await self.mysql_api.azure_models.truncate()
-            for model_name in AZURE_MODELS.__args__:
-                await self.mysql_api.azure_models.insert(
-                    AzureModelsBaseModel(
-                        api_model=model_name,
-                        api_resource=f"your-resource-{model_name}",
-                        api_deployment=f"your-deployment-{model_name}"
+            existing_azure = await self.mysql_api.azure_models.get_all()
+            if not existing_azure:
+                for model_name in AZURE_MODELS.__args__:
+                    await self.mysql_api.azure_models.insert(
+                        AzureModelsBaseModel(
+                            api_model=model_name,
+                            api_resource=f"your-resource-{model_name}",
+                            api_deployment=f"your-deployment-{model_name}"
+                        )
                     )
+
+            try:
+                from criadex.index.ragflow_objects.model_sync import sync_ragflow_models
+                await sync_ragflow_models(self.mysql_api)
+            except Exception as exc:
+                logging.getLogger(__name__).warning(
+                    "Ragflow model sync during initialize skipped: %s",
+                    exc,
                 )
 
 
@@ -1091,6 +1102,10 @@ class Criadex:
 
     async def list_generic_models(self) -> list[GenericModelsModel]:
         return await self.mysql_api.generic_models.get_all()
+
+    async def sync_ragflow_models(self, tenant_id: Optional[str] = None) -> dict[str, int]:
+        from criadex.index.ragflow_objects.model_sync import sync_ragflow_models
+        return await sync_ragflow_models(self.mysql_api, tenant_id=tenant_id)
 
     async def update_cohere_model(self, config: CohereModelsModel) -> CohereModelsModel:
         """

@@ -23,6 +23,12 @@ from starlette.requests import Request
 
 from app.controllers.schemas import catch_exceptions, APIResponse, SUCCESS, ERROR
 from app.core.route import CriaRoute
+from criadex.models.usability import (
+    infer_model_type,
+    is_azure_model_usable,
+    is_cohere_model_usable,
+    is_generic_model_usable,
+)
 
 view = APIRouter()
 
@@ -34,11 +40,26 @@ class ModelListItem(BaseModel):
     api_resource: Optional[str] = None
     api_deployment: Optional[str] = None
     config: Optional[dict] = None
+    model_type: Optional[str] = None
+    is_usable: bool = False
+    display_name: Optional[str] = None
 
 
 class ModelListResponse(APIResponse):
     code: Union[SUCCESS, ERROR]
     models: list[ModelListItem] = []
+
+
+def _dedupe_cohere_models(models: list) -> list:
+    """Keep one Cohere row per api_model (lowest id)."""
+    best: dict[str, object] = {}
+    for model in models:
+        key = (model.api_model or "").lower()
+        if not key:
+            continue
+        if key not in best or model.id < best[key].id:
+            best[key] = model
+    return list(best.values())
 
 
 @cbv(view)
@@ -48,42 +69,76 @@ class ListModelsRoute(CriaRoute):
     @view.get(
         path="/models/list",
         name="List All Models",
-        summary="List all provider models",
-        description="List all models across Azure, Cohere, and generic providers.",
+        summary="List usable provider models",
+        description=(
+            "List configured models across Azure, Cohere, generic, and Ragflow providers. "
+            "Ragflow tenant models are synced before listing. Placeholder seed models are excluded."
+        ),
     )
     @catch_exceptions(ResponseModel)
     async def execute(
             self,
             request: Request,
     ) -> ResponseModel:
+        try:
+            await request.app.criadex.sync_ragflow_models()
+        except Exception:
+            # Listing should still work when Ragflow DB is temporarily unavailable.
+            pass
+
         azure_models = await request.app.criadex.list_azure_models()
-        cohere_models = await request.app.criadex.list_cohere_models()
+        cohere_models = _dedupe_cohere_models(await request.app.criadex.list_cohere_models())
         generic_models = await request.app.criadex.list_generic_models()
 
         output: list[ModelListItem] = []
 
         for model in azure_models:
+            usable = is_azure_model_usable(model)
+            model_type = infer_model_type("azure", model.api_model)
             output.append(ModelListItem(
                 id=model.id,
                 provider_type="azure",
                 api_model=model.api_model,
                 api_resource=model.api_resource,
                 api_deployment=model.api_deployment,
+                model_type=model_type,
+                is_usable=usable,
+                display_name=model.api_model if usable else None,
             ))
 
         for model in cohere_models:
+            usable = is_cohere_model_usable(model)
+            model_type = infer_model_type("cohere", model.api_model)
             output.append(ModelListItem(
                 id=model.id,
                 provider_type="cohere",
                 api_model=model.api_model,
+                model_type=model_type,
+                is_usable=usable,
+                display_name=model.api_model if usable else None,
             ))
 
         for model in generic_models:
+            config = model.config or {}
+            api_model = (config.get("api_model") or "").strip()
+            usable = is_generic_model_usable(model)
+            model_type = infer_model_type(model.provider_type, api_model, config)
+            display_name = api_model
+            if usable and (model.provider_type or "").lower() == "ragflow":
+                factory = (config.get("llm_factory") or "").strip()
+                display_name = f"{api_model} ({factory})" if factory else api_model
+
+            merged_config = dict(config)
+            merged_config["model_type"] = model_type
+
             output.append(ModelListItem(
                 id=model.id,
                 provider_type=model.provider_type,
-                api_model=(model.config or {}).get("api_model"),
-                config=model.config,
+                api_model=api_model or None,
+                config=merged_config,
+                model_type=model_type,
+                is_usable=usable,
+                display_name=display_name if usable else None,
             ))
 
         return self.ResponseModel(

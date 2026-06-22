@@ -15,7 +15,7 @@ You should have received a copy of the GNU General Public License along with Cri
 """
 
 from app.core.route import CriaRouter
-from . import azure_models, cohere_models, generic_models, list, dedupe
+from . import azure_models, cohere_models, generic_models, list, dedupe, ragflow_sync
 
 router = CriaRouter()
 
@@ -25,4 +25,5 @@ router.include_views(
     generic_models.router,
     list.view,
     dedupe.view,
+    ragflow_sync.view,
 )

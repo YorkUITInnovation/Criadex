@@ -28,7 +28,7 @@ logger = logging.getLogger("uvicorn.error")
 RAGFLOW_API_URL_TEMPLATE = os.getenv("RAGFLOW_API_URL_TEMPLATE", "http://ragflow:80/api/v1/chats_openai/{chat_id}/chat/completions")
 RAGFLOW_DB_HOST = os.getenv("RAGFLOW_DB_HOST", "mysql")
 RAGFLOW_DB_USER = os.getenv("RAGFLOW_DB_USER", "root")
-RAGFLOW_DB_PASSWORD = os.getenv("RAGFLOW_DB_PASSWORD", "password")
+RAGFLOW_DB_PASSWORD = os.getenv("RAGFLOW_DB_PASSWORD", "cria")
 RAGFLOW_DB_NAME = os.getenv("RAGFLOW_DB_NAME", "rag_flow")
 RAGFLOW_TENANT_ID = os.getenv("RAGFLOW_TENANT_ID", "default_tenant")
 

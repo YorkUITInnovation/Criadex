@@ -200,3 +200,48 @@ class GenericModels(Table):
                 GenericModelsModel(id=row[0], provider_type=row[1], config=config)
             )
         return models
+
+    async def find_by_ragflow_key(
+        self,
+        tenant_id: str,
+        llm_factory: str,
+        llm_name: str,
+    ) -> Optional[GenericModelsModel]:
+        async with self.cursor() as cursor:
+            await cursor.execute(
+                """
+                SELECT `id`, `provider_type`, `config`, `created`
+                FROM GenericModels
+                WHERE `provider_type` = 'ragflow'
+                  AND JSON_UNQUOTE(JSON_EXTRACT(`config`, '$.tenant_id')) = %s
+                  AND JSON_UNQUOTE(JSON_EXTRACT(`config`, '$.llm_factory')) = %s
+                  AND JSON_UNQUOTE(JSON_EXTRACT(`config`, '$.llm_name')) = %s
+                ORDER BY `id` ASC
+                LIMIT 1
+                """,
+                (tenant_id, llm_factory, llm_name),
+            )
+            row = await cursor.fetchone()
+
+        if not row:
+            return None
+
+        config = row[2]
+        if isinstance(config, str):
+            config = json.loads(config)
+        return GenericModelsModel(id=row[0], provider_type=row[1], config=config)
+
+    async def delete_ragflow_not_in_ids(self, tenant_id: str, keep_ids: set[int]) -> int:
+        models = await self.get_all()
+        removed = 0
+        for model in models:
+            if (model.provider_type or "").lower() != "ragflow":
+                continue
+            config = model.config or {}
+            if (config.get("tenant_id") or "") != tenant_id:
+                continue
+            if model.id is None or model.id in keep_ids:
+                continue
+            await self.delete(model.id)
+            removed += 1
+        return removed
