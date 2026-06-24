@@ -43,6 +43,7 @@ from criadex.index.ragflow_objects.vector_store import RagflowVectorStore
 from criadex.index.ragflow_objects.embedder import RagflowEmbedder
 from criadex.index.ragflow_objects.retriever import RagflowRetriever
 from criadex.index.ragflow_objects.graph_rag import RagflowGraphRAGClient
+from criadex.index.ragflow_objects.kb_sync import RagflowKbSync
 
 from criadex.index.index_api.document.index_objects import DocumentConfig
 from criadex.graph import GroupGraphStore
@@ -72,6 +73,7 @@ class Criadex:
         self._active = {}
         self.graph_store = GroupGraphStore()
         self.graph_rag_client = RagflowGraphRAGClient()
+        self.kb_sync: Optional[RagflowKbSync] = None
         self._graph_job_tasks: dict[str, asyncio.Task] = {}
         self._ingest_batch_size = max(1, int(os.getenv("CRIADEX_INGEST_BATCH_SIZE", "32")))
         self._ingest_gc_every_batches = max(0, int(os.getenv("CRIADEX_INGEST_GC_EVERY_BATCHES", "4")))
@@ -106,6 +108,17 @@ class Criadex:
         if batch:
             yield batch
 
+    def _schedule_kb_sync(self, coro) -> None:
+        """Run Ragflow KB sync in the background so API requests are not blocked."""
+
+        async def _runner():
+            try:
+                await coro
+            except Exception as exc:
+                logging.warning("Ragflow KB sync background task failed: %s", exc)
+
+        asyncio.create_task(_runner())
+
     async def initialize(self) -> None:
         """
         Initialize Criadex
@@ -124,6 +137,8 @@ class Criadex:
 
         from criadex.migrations.runner import MigrationRunner
         await MigrationRunner(self.mysql_pool).run_pending()
+
+        self.kb_sync = RagflowKbSync(self.mysql_pool, self.mysql_api)
 
         # Seed catalog templates only when tables are empty (non-testing).
         if config.APP_MODE != AppMode.TESTING:
@@ -255,6 +270,9 @@ class Criadex:
             source="none",
         )
 
+        if self.kb_sync is not None:
+            self._schedule_kb_sync(self.kb_sync.sync_group_create(config))
+
     async def about(self, name: str) -> GroupsModel:
         """
         Get information about an index group
@@ -285,7 +303,18 @@ class Criadex:
 
         group_id: int = (await self.about(name=name)).id
 
-        # Delete the backing vector collection first so we do not leave stale
+        # Trigger Ragflow cleanup FIRST while the link record is still intact.
+        # Awaiting inline (not fire-and-forget) ensures Ragflow resources are removed
+        # even if the Elasticsearch or MySQL deletes fail afterwards.
+        if self.kb_sync is not None:
+            try:
+                await self.kb_sync.sync_group_delete(group_name=name)
+            except Exception as exc:
+                logging.warning(
+                    "Ragflow KB cleanup failed for group '%s' during delete: %s", name, exc
+                )
+
+        # Delete the backing vector collection so we do not leave stale
         # Elasticsearch data behind when groups are recreated with the same name.
         try:
             await self.vector_store.adelete_collection(collection_name=name)
@@ -383,6 +412,15 @@ class Criadex:
         await self.mysql_api.documents.insert(document_name=file_name, group_id=group_id)
         await self.mark_graph_stale(group_name=group_name, reason="content_uploaded")
 
+        if self.kb_sync is not None:
+            self._schedule_kb_sync(
+                self.kb_sync.sync_document_upload(
+                    group_name=group_name,
+                    file_name=file_name,
+                    file_contents=file_contents,
+                )
+            )
+
         return total_tokens
 
     async def delete_file(self, group_name: str, document_name: str) -> None:
@@ -400,6 +438,14 @@ class Criadex:
         await self.mysql_api.assets.delete_all_document_assets(document_id=document.id)
         await self.mysql_api.documents.delete(group_id=group_id, document_name=document.name)
         await self.mark_graph_stale(group_name=group_name, reason="content_deleted")
+
+        if self.kb_sync is not None:
+            self._schedule_kb_sync(
+                self.kb_sync.sync_document_delete(
+                    group_name=group_name,
+                    document_name=document_name,
+                )
+            )
 
     async def update_file(self, group_name: str, file_name: str, file_contents: dict, file_metadata: dict) -> int:
         await self.delete_file(group_name=group_name, document_name=file_name)
