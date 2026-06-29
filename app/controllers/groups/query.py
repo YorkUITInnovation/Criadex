@@ -1,9 +1,9 @@
 from typing import Optional, List, Union
 from fastapi import APIRouter, Body, Request
 from fastapi_utils.cbv import cbv
-from app.controllers.schemas import APIResponse, SUCCESS, ERROR, GROUP_NOT_FOUND
+from app.controllers.schemas import APIResponse, SUCCESS, ERROR, GROUP_NOT_FOUND, INDEX_NOT_FOUND
 from app.core.route import CriaRoute
-from criadex.schemas import GroupNotFoundError
+from criadex.schemas import GroupNotFoundError, IndexNotFoundError
 from criadex.index.schemas import SearchConfig, IndexResponse, TextNodeWithScore, Asset
 from pydantic import Field
 
@@ -11,7 +11,7 @@ view = APIRouter()
 
 
 class GroupQueryResponse(APIResponse, IndexResponse):
-    code: Union[SUCCESS, GROUP_NOT_FOUND, ERROR]
+    code: Union[SUCCESS, GROUP_NOT_FOUND, INDEX_NOT_FOUND, ERROR]
     nodes: List[TextNodeWithScore] = Field(default_factory=list)
     assets: List[Asset] = Field(default_factory=list)
     search_units: int = 0
@@ -49,6 +49,15 @@ class QueryGroupRoute(CriaRoute):
                 code="GROUP_NOT_FOUND",
                 status=404,
                 message=f"The requested group '{group_name}' was not found!",
+                nodes=[],
+                assets=[],
+                search_units=0
+            )
+        except IndexNotFoundError as e:
+            return self.ResponseModel(
+                code="INDEX_NOT_FOUND",
+                status=404,
+                message=str(e),
                 nodes=[],
                 assets=[],
                 search_units=0

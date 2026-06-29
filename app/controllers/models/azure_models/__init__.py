@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License along with Cri
 
 from fastapi import Security
 
-from . import about, create, delete, update
+from . import about, create, delete, update, list
 from app.core.security import get_api_key_model_query
 from app.core import config
 from app.core.schemas import AppMode
@@ -32,6 +32,7 @@ router.include_views(
     update.view,
     delete.view,
     about.view,
+    list.view,
 )
 
 __all__ = ["router"]

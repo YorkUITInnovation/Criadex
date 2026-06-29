@@ -51,7 +51,19 @@ class CreateGenericModelRoute(CriaRoute):
             )
         db = request.app.criadex.mysql_api
         config_dict = model_config.model_dump(exclude_none=True)
-        base = GenericModelsBaseModel(provider_type=provider_type.lower(), config=config_dict)
+        provider = provider_type.lower()
+        api_model = (config_dict.get("api_model") or "").strip()
+        if api_model:
+            existing = await db.generic_models.find_by_provider_and_api_model(provider, api_model)
+            if existing:
+                return self.ResponseModel(
+                    code="SUCCESS",
+                    status=200,
+                    message="Model already exists.",
+                    model=existing,
+                )
+
+        base = GenericModelsBaseModel(provider_type=provider, config=config_dict)
         model = await db.generic_models.insert(config=base)
         return self.ResponseModel(
             code="SUCCESS",

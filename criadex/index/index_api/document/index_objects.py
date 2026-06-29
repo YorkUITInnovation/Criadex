@@ -62,8 +62,8 @@ class Element:
 
     """
 
-    type: ElementType
     text: str
+    type: ElementType = ElementType.UNCATEGORIZED_TEXT
     metadata: dict = dataclasses.field(default_factory=dict)
     element_id: str = dataclasses.field(default_factory=lambda: str(uuid.uuid4()))
 

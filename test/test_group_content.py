@@ -11,12 +11,18 @@ from app.controllers.content.search import ContentSearchResponse
 from app.controllers.content.update import ContentUpdateResponse
 from app.controllers.content.upload import ContentUploadResponse
 from criadex.index.base_api import ContentUploadConfig
-from criadex.index.index_api.document.index_objects import DocumentConfig
+from criadex.index.index_api.document.index_objects import DocumentConfig, ElementType
 from criadex.index.index_api.question.index_objects import QuestionConfig
 from criadex.index.schemas import SearchConfig, IndexResponse
 from .utils.content_utils import sample_document, sample_document_updated, sample_question, sample_question_updated
 from .utils.misc_utils import assert_exists_index
 from .utils.test_client import CriaTestClient, assert_response_shape
+
+
+@pytest.mark.asyncio
+async def test_document_config_defaults_missing_node_type() -> None:
+    doc = DocumentConfig(nodes=[{"text": "FAQ answer"}])
+    assert doc.nodes[0].type == ElementType.UNCATEGORIZED_TEXT
 
 
 @pytest.mark.asyncio

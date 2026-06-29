@@ -97,6 +97,7 @@ RATE_LIMIT: Type = Literal["RATE_LIMIT"]
 DUPLICATE: Type = Literal["DUPLICATE"]
 INVALID_INDEX_TYPE: Type = Literal["INVALID_INDEX_TYPE"]
 GROUP_NOT_FOUND: Type = Literal["GROUP_NOT_FOUND"]
+INDEX_NOT_FOUND: Type = Literal["INDEX_NOT_FOUND"]
 FILE_NOT_FOUND: Type = Literal["FILE_NOT_FOUND"]
 INVALID_FILE_DATA: Type = Literal["INVALID_FILE_DATA"]
 MODEL_IN_USE: Type = Literal["MODEL_IN_USE"]
@@ -134,6 +135,8 @@ class PartialGroupConfig(BaseModel):
     llm_model_id: int
     embedding_model_id: int
     rerank_model_id: int
+    use_knowledge_graph: bool = True
+    requires_documents: Optional[bool] = None
 
 
 class GroupConfig(PartialGroupConfig):
@@ -223,6 +226,15 @@ class ModelInUseError(RuntimeError):
 class DocumentNotFoundError(RuntimeError):
     """
     Thrown if the document does not exist in the index group and is being accessed
+
+    """
+
+
+class IndexNotFoundError(RuntimeError):
+    """
+    Thrown when the Elasticsearch index for a group does not exist.
+    This typically means the group was created but its index was lost
+    (e.g. Elasticsearch was wiped) and content needs to be re-uploaded.
 
     """
 

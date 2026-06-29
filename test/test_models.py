@@ -1,10 +1,12 @@
 import pytest
 import uuid
+import re
 from httpx import Response
 
 from app.controllers.schemas import APIResponse, SUCCESS, ERROR, MODEL_NOT_FOUND
 from app.controllers.models.cohere_models.schemas import CohereRerankRequest, CohereRerankResponse
 from criadex.index.ragflow_objects.embedder import RagflowEmbedder
+from criadex.index.ragflow_objects.vector_store import RagflowVectorStore
 from test.utils.test_client import CriaTestClient, assert_response_shape
 
 
@@ -19,6 +21,46 @@ def test_ragflow_embedder():
     assert isinstance(embedding, list), "Embedding should be a list"
     assert len(embedding) > 0, "Embedding should not be empty"
     assert all(isinstance(x, float) for x in embedding), "All elements in the embedding should be floats"
+
+
+def test_ragflow_vector_store_create_collection_uses_requested_dims(mock_elasticsearch_client):
+    mock_elasticsearch_client.indices.exists.return_value = False
+    mock_elasticsearch_client.indices.create.reset_mock()
+
+    store = RagflowVectorStore(host="localhost", port=9200)
+    store.create_collection("pytest-dims-index", embedding_dims=1536)
+
+    mock_elasticsearch_client.indices.create.assert_called_once()
+    _, kwargs = mock_elasticsearch_client.indices.create.call_args
+    assert kwargs["body"]["mappings"]["properties"]["embedding"]["dims"] == 1536
+
+
+def test_ragflow_vector_store_sanitizes_invalid_collection_name():
+    store = RagflowVectorStore(host="localhost", port=9200)
+    unsafe_name = "Moodle 5 laptop dev-The art of Art-document-index"
+
+    safe_name = store._to_es_index_name(unsafe_name)
+
+    assert " " not in safe_name
+    assert safe_name == safe_name.lower()
+    assert len(safe_name) <= 255
+    assert re.search(r"-[0-9a-f]{8}$", safe_name) is not None
+
+
+def test_ragflow_vector_store_insert_uses_sanitized_index_name(mock_elasticsearch_client):
+    store = RagflowVectorStore(host="localhost", port=9200)
+    unsafe_name = "Moodle 5 laptop dev-The art of Art-document-index"
+
+    # insert() now requires the target ES index to exist.
+    mock_elasticsearch_client.indices.exists.return_value = True
+    mock_elasticsearch_client.index.reset_mock()
+    store.insert(unsafe_name, "doc-1", [0.1, 0.2], "test text", {"source": "pytest"})
+
+    mock_elasticsearch_client.index.assert_called_once()
+    _, kwargs = mock_elasticsearch_client.index.call_args
+    used_index = kwargs["index"]
+    assert " " not in used_index
+    assert used_index == store._to_es_index_name(unsafe_name)
 
 @pytest.mark.asyncio
 async def test_cohere_rerank_positive(
@@ -72,12 +114,13 @@ async def test_generic_models_crud_round_trip(
     - DELETE /models/{provider_type}/{model_id}/delete
     """
     provider_type = "ollama"
+    api_model = f"llama3-8b-{uuid.uuid4().hex[:8]}"
 
     # 1) Create a generic model
     create_body = {
         "api_base_url": "http://ollama:11434",
         "api_key": "test-key",
-        "api_model": "llama3:8b",
+        "api_model": api_model,
         "extra_param": "extra-value",
     }
     create_response = client.post(
@@ -188,3 +231,119 @@ async def test_generic_models_rejects_azure_and_cohere(
         json=body,
     )
     assert cohere_resp.status_code in (200, 400, 409, 422)
+
+
+@pytest.mark.asyncio
+async def test_provider_model_list_endpoints(
+        client: CriaTestClient,
+        sample_master_headers: dict
+) -> None:
+    azure_response = client.get(
+        "/models/azure/list",
+        headers=sample_master_headers,
+    )
+    azure_data: APIResponse = assert_response_shape(azure_response.json())
+    assert azure_data.status == 200
+    assert any(model["api_model"] == "gpt-4" for model in azure_response.json().get("models", []))
+    assert any(model["api_model"] == "text-embedding-ada-002" for model in azure_response.json().get("models", []))
+
+    cohere_response = client.get(
+        "/models/cohere/list",
+        headers=sample_master_headers,
+    )
+    cohere_data: APIResponse = assert_response_shape(cohere_response.json())
+    assert cohere_data.status == 200
+    assert any(model["api_model"] == "rerank-english-v2.0" for model in cohere_response.json().get("models", []))
+
+
+@pytest.mark.asyncio
+async def test_aggregate_model_list_endpoint(
+        client: CriaTestClient,
+        sample_master_headers: dict
+) -> None:
+    response = client.get(
+        "/models/list",
+        headers=sample_master_headers,
+    )
+    data: APIResponse = assert_response_shape(response.json())
+    assert data.status == 200
+
+    models = response.json().get("models", [])
+    provider_types = {model["provider_type"] for model in models}
+    assert "azure" in provider_types
+    assert "cohere" in provider_types
+
+
+@pytest.mark.asyncio
+async def test_generic_provider_list_endpoint(
+        client: CriaTestClient,
+        sample_master_headers: dict
+) -> None:
+    provider_type = "ollama"
+    api_model = f"llama3-list-{uuid.uuid4().hex[:8]}"
+    create_response = client.post(
+        f"/models/{provider_type}/create",
+        headers=sample_master_headers,
+        json={
+            "api_base_url": "http://ollama:11434",
+            "api_model": api_model,
+        },
+    )
+    create_data: APIResponse = assert_response_shape(create_response.json())
+    assert create_data.status == 200
+    model_id = create_response.json()["model"]["id"]
+
+    try:
+        list_response = client.get(
+            f"/models/{provider_type}/list",
+            headers=sample_master_headers,
+        )
+        list_data: APIResponse = assert_response_shape(list_response.json())
+        assert list_data.status == 200
+        models = list_response.json().get("models", [])
+        assert any(
+            model["provider_type"] == provider_type
+            and (model.get("config") or {}).get("api_model") == api_model
+            for model in models
+        )
+    finally:
+        client.delete(
+            f"/models/{provider_type}/{model_id}/delete",
+            headers=sample_master_headers,
+        )
+
+
+@pytest.mark.asyncio
+async def test_generic_model_create_is_idempotent(
+        client: CriaTestClient,
+        sample_master_headers: dict
+) -> None:
+    provider_type = "ollama"
+    api_model = f"llama3-idem-{uuid.uuid4().hex[:8]}"
+    payload = {
+        "api_base_url": "http://ollama:11434",
+        "api_model": api_model,
+    }
+
+    first = client.post(
+        f"/models/{provider_type}/create",
+        headers=sample_master_headers,
+        json=payload,
+    )
+    first_data: APIResponse = assert_response_shape(first.json())
+    assert first_data.status == 200
+    first_id = first.json()["model"]["id"]
+
+    second = client.post(
+        f"/models/{provider_type}/create",
+        headers=sample_master_headers,
+        json=payload,
+    )
+    second_data: APIResponse = assert_response_shape(second.json())
+    assert second_data.status == 200
+    assert second.json()["model"]["id"] == first_id
+
+    client.delete(
+        f"/models/{provider_type}/{first_id}/delete",
+        headers=sample_master_headers,
+    )

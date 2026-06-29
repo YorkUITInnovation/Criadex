@@ -56,8 +56,7 @@ class CreateGroupRoute(CriaRoute):
         config: GroupConfig = GroupConfig(**group_config.model_dump(), **{"name": group_name})
         criadex: Criadex = request.app.criadex
 
-        # Confirm the LLM model exists (Azure Models)!
-        if not await criadex.exists_azure_model(model_id=config.llm_model_id):
+        if not await criadex.exists_model(model_id=config.llm_model_id):
             return self.ResponseModel(
                 code="INVALID_MODEL",
                 status=400,
@@ -65,8 +64,7 @@ class CreateGroupRoute(CriaRoute):
                 config=config
             )
 
-        # Confirm the Embedding model exists (Azure Models)!
-        if not await criadex.exists_azure_model(model_id=config.embedding_model_id):
+        if not await criadex.exists_model(model_id=config.embedding_model_id):
             return self.ResponseModel(
                 code="INVALID_MODEL",
                 status=400,
@@ -74,8 +72,7 @@ class CreateGroupRoute(CriaRoute):
                 config=config
             )
 
-        # Confirm the Rerank model exists (Cohere Models)!
-        if not await criadex.exists_cohere_model(model_id=config.rerank_model_id):
+        if config.rerank_model_id and not await criadex.exists_model(model_id=config.rerank_model_id):
             return self.ResponseModel(
                 code="INVALID_MODEL",
                 status=400,
