@@ -285,14 +285,34 @@ class RagflowKbClient:
         llm_id: Optional[str] = None,
         description: str = "Cria bot synced from Moodle",
     ) -> dict[str, Any]:
-        body: dict[str, Any] = {
-            "name": name,
-            "dataset_ids": dataset_ids,
-            "description": description,
-        }
-        if llm_id:
-            body["llm_id"] = llm_id
-        payload = await self._request("POST", "/api/v1/chats", json_body=body)
+        def _build_body(include_llm_id: bool) -> dict[str, Any]:
+            body: dict[str, Any] = {
+                "name": name,
+                "dataset_ids": dataset_ids,
+                "description": description,
+            }
+            if include_llm_id and llm_id:
+                body["llm_id"] = llm_id
+            return body
+
+        try:
+            payload = await self._request("POST", "/api/v1/chats", json_body=_build_body(True))
+        except RuntimeError as exc:
+            # Ragflow >=0.26 strictly validates llm_id and rejects identifiers that are
+            # not the full "<model>@<key>@<provider>" form (e.g. the 2-part
+            # "<model>@<provider>" that older sync produced). Rather than failing the
+            # whole bot sync, retry without llm_id so Ragflow uses the tenant default.
+            message = str(exc).lower()
+            if llm_id and ("llm_id" in message or "doesn't exist" in message or "does not exist" in message):
+                logger.warning(
+                    "Ragflow rejected llm_id '%s' (%s); retrying chat '%s' create with tenant default model",
+                    llm_id,
+                    exc,
+                    name,
+                )
+                payload = await self._request("POST", "/api/v1/chats", json_body=_build_body(False))
+            else:
+                raise
         data = payload.get("data")
         if not isinstance(data, dict):
             raise RuntimeError("Ragflow create_chat returned no data")

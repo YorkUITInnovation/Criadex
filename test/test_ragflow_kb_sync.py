@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -253,14 +253,13 @@ async def test_sync_group_create_retries_without_embedding_model_on_invalid_iden
 
     pool = AsyncMock()
     mysql_api = AsyncMock()
-    model = AsyncMock()
-    model.provider_type = "ragflow"
-    model.config = {"api_model": "embed-english-v2.0"}
-    mysql_api.generic_models.retrieve = AsyncMock(return_value=model)
 
     sync = RagflowKbSync(pool, mysql_api, client=client)
     sync._read_link = AsyncMock(return_value=None)
     sync._write_link = AsyncMock()
+    sync._resolve_ragflow_model_name = AsyncMock(
+        return_value="embed-english-v2.0@cohere@Cohere"
+    )
 
     config = GroupConfig(
         name="bot-document-index",
@@ -274,7 +273,7 @@ async def test_sync_group_create_retries_without_embedding_model_on_invalid_iden
     assert client.create_dataset.await_count == 2
     first_call = client.create_dataset.await_args_list[0].kwargs
     second_call = client.create_dataset.await_args_list[1].kwargs
-    assert first_call.get("embedding_model") == "embed-english-v2.0"
+    assert first_call.get("embedding_model") == "embed-english-v2.0@cohere@Cohere"
     assert second_call.get("embedding_model") is None
 
 
@@ -523,7 +522,70 @@ async def test_list_chats_accepts_list_payload(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_resolve_ragflow_model_name_appends_factory(monkeypatch) -> None:
+async def test_create_chat_retries_without_llm_id_when_rejected(monkeypatch) -> None:
+    """Ragflow >=0.26 rejects non-fully-qualified llm_id; create_chat must retry
+    without it (tenant default) instead of failing the whole bot sync."""
+    from criadex.index.ragflow_objects.kb_client import RagflowKbClient
+
+    client = RagflowKbClient(api_key="test-key")
+    client._request = AsyncMock(
+        side_effect=[
+            RuntimeError("Ragflow API error 102: `llm_id` gpt-3.5-turbo@OpenAI doesn't exist"),
+            {"code": 0, "data": {"id": "chat-default", "name": "bot"}},
+        ]
+    )
+
+    data = await client.create_chat(
+        name="bot",
+        dataset_ids=[],
+        llm_id="gpt-3.5-turbo@OpenAI",
+    )
+
+    assert data == {"id": "chat-default", "name": "bot"}
+    assert client._request.await_count == 2
+    # First attempt includes llm_id; retry must drop it so Ragflow uses the default.
+    first_body = client._request.await_args_list[0].kwargs["json_body"]
+    second_body = client._request.await_args_list[1].kwargs["json_body"]
+    assert first_body.get("llm_id") == "gpt-3.5-turbo@OpenAI"
+    assert "llm_id" not in second_body
+
+
+@pytest.mark.asyncio
+async def test_create_chat_does_not_retry_on_unrelated_error(monkeypatch) -> None:
+    from criadex.index.ragflow_objects.kb_client import RagflowKbClient
+
+    client = RagflowKbClient(api_key="test-key")
+    client._request = AsyncMock(
+        side_effect=RuntimeError("Ragflow API error 500: internal boom")
+    )
+
+    with pytest.raises(RuntimeError, match="internal boom"):
+        await client.create_chat(name="bot", dataset_ids=[], llm_id="gpt-3.5-turbo@OpenAI")
+    assert client._request.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_resolve_ragflow_model_name_uses_qualified_config(monkeypatch) -> None:
+    monkeypatch.setenv("RAGFLOW_API_KEY", "test-key")
+
+    pool = AsyncMock()
+    mysql_api = AsyncMock()
+    model = AsyncMock()
+    model.provider_type = "ragflow"
+    model.config = {
+        "api_model": "embed-english-v2.0@cohere@Cohere",
+        "llm_factory": "Cohere",
+    }
+    mysql_api.generic_models.retrieve = AsyncMock(return_value=model)
+
+    sync = RagflowKbSync(pool, mysql_api)
+    result = await sync._resolve_ragflow_model_name(42, model_kind="embedding")
+
+    assert result == "embed-english-v2.0@cohere@Cohere"
+
+
+@pytest.mark.asyncio
+async def test_resolve_ragflow_model_name_returns_none_for_unqualified_config(monkeypatch) -> None:
     monkeypatch.setenv("RAGFLOW_API_KEY", "test-key")
 
     pool = AsyncMock()
@@ -537,28 +599,13 @@ async def test_resolve_ragflow_model_name_appends_factory(monkeypatch) -> None:
     mysql_api.generic_models.retrieve = AsyncMock(return_value=model)
 
     sync = RagflowKbSync(pool, mysql_api)
-    result = await sync._resolve_ragflow_model_name(42, model_kind="embedding")
+    with patch(
+        "criadex.index.ragflow_objects.kb_sync.resolve_qualified_model_id",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await sync._resolve_ragflow_model_name(42, model_kind="embedding")
 
-    assert result == "embed-english-v2.0@Cohere"
-
-
-@pytest.mark.asyncio
-async def test_resolve_ragflow_model_name_no_double_at(monkeypatch) -> None:
-    """If api_model already contains '@', do not append factory again."""
-    pool = AsyncMock()
-    mysql_api = AsyncMock()
-    model = AsyncMock()
-    model.provider_type = "ragflow"
-    model.config = {
-        "api_model": "embed-english-v2.0@Cohere",
-        "llm_factory": "Cohere",
-    }
-    mysql_api.generic_models.retrieve = AsyncMock(return_value=model)
-
-    sync = RagflowKbSync(pool, mysql_api)
-    result = await sync._resolve_ragflow_model_name(42, model_kind="embedding")
-
-    assert result == "embed-english-v2.0@Cohere"
+    assert result is None
 
 
 @pytest.mark.asyncio

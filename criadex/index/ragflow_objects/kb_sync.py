@@ -15,6 +15,7 @@ from aiomysql import Pool
 from criadex.database.api import GroupDatabaseAPI
 from criadex.database.tables.models.generic import GenericModelsModel
 from criadex.index.ragflow_objects.kb_client import RagflowKbClient, kb_sync_enabled
+from criadex.index.ragflow_objects.model_ids import resolve_qualified_model_id
 from criadex.schemas import GroupConfig, IndexType
 
 logger = logging.getLogger(__name__)
@@ -257,10 +258,11 @@ class RagflowKbSync:
             api_model = str(config.get("api_model") or config.get("llm_name") or "").strip()
             llm_factory = str(config.get("llm_factory") or "").strip()
             if api_model:
-                # Ragflow requires "<model_name>@<provider>" format
-                if llm_factory and "@" not in api_model:
-                    return f"{api_model}@{llm_factory}"
-                return api_model
+                return await resolve_qualified_model_id(
+                    api_model=api_model,
+                    llm_factory=llm_factory,
+                    model_kind=model_kind,
+                )
 
         return None
 

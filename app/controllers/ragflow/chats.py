@@ -1,4 +1,5 @@
 from typing import Optional
+import os
 from fastapi import APIRouter
 from fastapi_restful.cbv import cbv
 from starlette.requests import Request
@@ -13,7 +14,7 @@ view = APIRouter(prefix="/ragflow", tags=["Ragflow"])
 
 class EnsureDialogRequest(BaseModel):
     tenant_id: Optional[str] = None
-    llm_id: Optional[str] = "gpt-3.5-turbo"
+    llm_id: Optional[str] = None
 
 
 class EnsureDialogResponse(APIResponse):
@@ -46,7 +47,8 @@ class RagflowChatsRoute(CriaRoute):
             success = await agent.ensure_dialog_exists(
                 chat_id=chat_id,
                 tenant_id=payload.tenant_id,
-                llm_id=payload.llm_id or "gpt-3.5-turbo"
+                llm_id=payload.llm_id,
+                api_key=os.getenv("RAGFLOW_API_KEY", ""),
             )
             
             return self.ResponseModel(

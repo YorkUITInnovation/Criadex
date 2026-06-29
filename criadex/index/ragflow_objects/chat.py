@@ -23,6 +23,15 @@ import hashlib
 from datetime import datetime
 import time
 
+from criadex.index.ragflow_objects.model_ids import (
+    RAGFLOW_COMPLETION_MODEL_PLACEHOLDER,
+    is_qualified_ragflow_model_id,
+    model_name_from_ragflow_id,
+    resolve_qualified_model_id,
+    resolve_tenant_default_model_id,
+    resolve_tenant_id,
+)
+
 logger = logging.getLogger("uvicorn.error")
 
 RAGFLOW_API_URL_TEMPLATE = os.getenv("RAGFLOW_API_URL_TEMPLATE", "http://ragflow:80/api/v1/chats_openai/{chat_id}/chat/completions")
@@ -30,7 +39,6 @@ RAGFLOW_DB_HOST = os.getenv("RAGFLOW_DB_HOST", "mysql")
 RAGFLOW_DB_USER = os.getenv("RAGFLOW_DB_USER", "root")
 RAGFLOW_DB_PASSWORD = os.getenv("RAGFLOW_DB_PASSWORD", "cria")
 RAGFLOW_DB_NAME = os.getenv("RAGFLOW_DB_NAME", "rag_flow")
-RAGFLOW_TENANT_ID = os.getenv("RAGFLOW_TENANT_ID", "default_tenant")
 
 
 class RagflowChatAgent:
@@ -107,18 +115,47 @@ class RagflowChatAgent:
         # Hash all other IDs (UUIDs, app-specific labels, etc.) to fit Ragflow schema.
         return hashlib.md5(raw.encode()).hexdigest()[:32]
 
-    async def ensure_dialog_exists(self, chat_id: str, tenant_id: str = None, llm_id: str = "gpt-3.5-turbo") -> bool:
+    async def ensure_dialog_exists(
+        self,
+        chat_id: str,
+        tenant_id: str | None = None,
+        llm_id: str | None = None,
+        *,
+        api_key: str | None = None,
+    ) -> bool:
         """
         Ensure a dialog exists in Ragflow for the given chat_id.
         If it doesn't exist, create it.
 
         :param chat_id: The chat session ID to ensure exists
-        :param tenant_id: The tenant ID (defaults to RAGFLOW_TENANT_ID from env)
-        :param llm_id: The LLM model to use for this dialog (defaults to gpt-3.5-turbo)
+        :param tenant_id: The tenant ID (resolved from env/API key when omitted)
+        :param llm_id: Optional qualified Ragflow chat model id; tenant default used when omitted
+        :param api_key: Optional Ragflow API key used to resolve tenant id
         :return: True if dialog exists or was created, False otherwise
         """
         if not tenant_id:
-            tenant_id = RAGFLOW_TENANT_ID
+            tenant_id = await resolve_tenant_id(api_key=api_key)
+        if not tenant_id:
+            logger.error("Cannot ensure Ragflow dialog without a resolved tenant id")
+            return False
+
+        # Ragflow needs a fully-qualified "<model>@<instance>@<provider>" id. Callers
+        # (e.g. the SDK) may pass a bare model name like "gpt-3.5-turbo"; qualify it
+        # against tenant config rather than persisting an unusable bare value.
+        if llm_id and not is_qualified_ragflow_model_id(llm_id):
+            llm_id = await resolve_qualified_model_id(
+                api_model=model_name_from_ragflow_id(llm_id) or llm_id,
+                model_kind="chat",
+                tenant_id=tenant_id,
+            )
+        if not llm_id:
+            llm_id = await resolve_tenant_default_model_id(tenant_id, model_kind="chat")
+        if not llm_id:
+            logger.error(
+                "Cannot create Ragflow dialog for chat_id=%s: no tenant chat model configured",
+                chat_id,
+            )
+            return False
 
         try:
             import aiomysql
@@ -222,8 +259,10 @@ class RagflowChatAgent:
         # Normalize messages from various formats
         messages = self._normalize_history(history)
 
+        # Ragflow substitutes the dialog's configured llm_id when model is the sentinel
+        # value below — no provider/model names are hardcoded here.
         payload = {
-            "model": "ragflow",
+            "model": RAGFLOW_COMPLETION_MODEL_PLACEHOLDER,
             "messages": messages,
             "stream": False
         }
@@ -280,7 +319,10 @@ class RagflowChatAgent:
                     dialog_id,
                 )
                 rebound_dialog_id = hashlib.md5(f"{chat_id}:{int(time.time()*1000)}".encode()).hexdigest()[:32]
-                ensured = await self.ensure_dialog_exists(rebound_dialog_id, tenant_id=RAGFLOW_TENANT_ID)
+                ensured = await self.ensure_dialog_exists(
+                    rebound_dialog_id,
+                    api_key=api_key,
+                )
                 if ensured:
                     retry_url = RAGFLOW_API_URL_TEMPLATE.format(chat_id=rebound_dialog_id)
                     try:
