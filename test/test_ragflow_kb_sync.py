@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -482,15 +482,34 @@ async def test_sync_group_delete_cleans_orphan_datasets_by_name(monkeypatch) -> 
     sync._delete_link.assert_awaited_once()
 
 
+def _mock_chat_obj(id="chat-1", name="bot", dataset_ids=None):
+    from unittest.mock import MagicMock
+    m = MagicMock()
+    m.id = id
+    m.name = name
+    m.dataset_ids = dataset_ids or []
+    return m
+
+
+def _mock_dataset_obj(id="ds-1", name="ds", tenant_id=None, permission="me"):
+    from unittest.mock import MagicMock
+    m = MagicMock()
+    m.id = id
+    m.name = name
+    m.tenant_id = tenant_id
+    m.permission = permission
+    return m
+
+
 @pytest.mark.asyncio
 async def test_list_datasets_permission_error_treated_as_missing(monkeypatch) -> None:
+    from unittest.mock import MagicMock
     from criadex.index.ragflow_objects.kb_client import RagflowKbClient
 
     client = RagflowKbClient(api_key="test-key")
-    client._request = AsyncMock(
-        side_effect=RuntimeError(
-            "Ragflow API error 108: User 'tenant' lacks permission for dataset 'missing'"
-        )
+    client._rag = MagicMock()
+    client._rag.list_datasets.side_effect = Exception(
+        "108: User 'tenant' lacks permission for dataset 'missing'"
     )
 
     datasets = await client.list_datasets(name="missing")
@@ -499,41 +518,49 @@ async def test_list_datasets_permission_error_treated_as_missing(monkeypatch) ->
 
 @pytest.mark.asyncio
 async def test_list_chats_missing_error_treated_as_empty(monkeypatch) -> None:
+    from unittest.mock import MagicMock
     from criadex.index.ragflow_objects.kb_client import RagflowKbClient
 
     client = RagflowKbClient(api_key="test-key")
-    client._request = AsyncMock(
-        side_effect=RuntimeError("Ragflow API error 102: The chat doesn't exist")
-    )
+    client._rag = MagicMock()
+    client._rag.list_chats.side_effect = Exception("102: The chat doesn't exist")
 
     chats = await client.list_chats(name="missing-chat")
     assert chats == []
 
 
 @pytest.mark.asyncio
-async def test_list_chats_accepts_list_payload(monkeypatch) -> None:
+async def test_list_chats_sdk_objects_converted_to_dicts(monkeypatch) -> None:
+    """list_chats converts SDK Chat objects to the dict format kb_sync expects."""
+    from unittest.mock import MagicMock
     from criadex.index.ragflow_objects.kb_client import RagflowKbClient
 
     client = RagflowKbClient(api_key="test-key")
-    client._request = AsyncMock(return_value={"code": 0, "data": [{"id": "chat-1", "name": "bot"}]})
+    client._rag = MagicMock()
+    client._rag.list_chats.return_value = [_mock_chat_obj(id="chat-1", name="bot", dataset_ids=["ds-1"])]
 
     chats = await client.list_chats()
-    assert chats == [{"id": "chat-1", "name": "bot"}]
+    assert len(chats) == 1
+    assert chats[0]["id"] == "chat-1"
+    assert chats[0]["name"] == "bot"
+    # Both dataset_ids and datasets alias must be present for kb_sync reconcile
+    assert chats[0]["dataset_ids"] == ["ds-1"]
+    assert chats[0]["datasets"] == ["ds-1"]
 
 
 @pytest.mark.asyncio
 async def test_create_chat_retries_without_llm_id_when_rejected(monkeypatch) -> None:
     """Ragflow >=0.26 rejects non-fully-qualified llm_id; create_chat must retry
     without it (tenant default) instead of failing the whole bot sync."""
+    from unittest.mock import MagicMock, call
     from criadex.index.ragflow_objects.kb_client import RagflowKbClient
 
     client = RagflowKbClient(api_key="test-key")
-    client._request = AsyncMock(
-        side_effect=[
-            RuntimeError("Ragflow API error 102: `llm_id` gpt-3.5-turbo@OpenAI doesn't exist"),
-            {"code": 0, "data": {"id": "chat-default", "name": "bot"}},
-        ]
-    )
+    client._rag = MagicMock()
+    client._rag.create_chat.side_effect = [
+        Exception("`llm_id` gpt-3.5-turbo@OpenAI doesn't exist"),
+        _mock_chat_obj(id="chat-default", name="bot"),
+    ]
 
     data = await client.create_chat(
         name="bot",
@@ -541,27 +568,28 @@ async def test_create_chat_retries_without_llm_id_when_rejected(monkeypatch) -> 
         llm_id="gpt-3.5-turbo@OpenAI",
     )
 
-    assert data == {"id": "chat-default", "name": "bot"}
-    assert client._request.await_count == 2
-    # First attempt includes llm_id; retry must drop it so Ragflow uses the default.
-    first_body = client._request.await_args_list[0].kwargs["json_body"]
-    second_body = client._request.await_args_list[1].kwargs["json_body"]
-    assert first_body.get("llm_id") == "gpt-3.5-turbo@OpenAI"
-    assert "llm_id" not in second_body
+    assert data["id"] == "chat-default"
+    assert data["name"] == "bot"
+    assert client._rag.create_chat.call_count == 2
+    # First attempt includes llm_id; retry must drop it so Ragflow uses the tenant default.
+    first_kwargs = client._rag.create_chat.call_args_list[0].kwargs
+    second_kwargs = client._rag.create_chat.call_args_list[1].kwargs
+    assert first_kwargs.get("llm_id") == "gpt-3.5-turbo@OpenAI"
+    assert "llm_id" not in second_kwargs
 
 
 @pytest.mark.asyncio
 async def test_create_chat_does_not_retry_on_unrelated_error(monkeypatch) -> None:
+    from unittest.mock import MagicMock
     from criadex.index.ragflow_objects.kb_client import RagflowKbClient
 
     client = RagflowKbClient(api_key="test-key")
-    client._request = AsyncMock(
-        side_effect=RuntimeError("Ragflow API error 500: internal boom")
-    )
+    client._rag = MagicMock()
+    client._rag.create_chat.side_effect = Exception("internal boom")
 
     with pytest.raises(RuntimeError, match="internal boom"):
         await client.create_chat(name="bot", dataset_ids=[], llm_id="gpt-3.5-turbo@OpenAI")
-    assert client._request.await_count == 1
+    assert client._rag.create_chat.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -1116,3 +1144,416 @@ async def test_ensure_chat_defers_link_when_parsing_in_progress(monkeypatch) -> 
     assert result == "chat-existing"
     # A background retry task must have been created
     assert len(created_tasks) >= 1
+
+
+# _sync_chunks_to_es / list_chunks_for_document tests 
+
+@pytest.mark.asyncio
+async def test_sync_chunks_to_es_inserts_each_chunk(monkeypatch) -> None:
+    """After Ragflow parsing, each chunk must be embedded and written to Elasticsearch."""
+    monkeypatch.setenv("RAGFLOW_API_KEY", "test-key")
+
+    client = AsyncMock()
+    client.list_chunks_for_document = AsyncMock(return_value=[
+        {"content": "Learning objectives for week 1", "chunk_id": "c1"},
+        {"content": "Assessment criteria and grading rubric", "chunk_id": "c2"},
+    ])
+
+    vector_store = AsyncMock()
+    vector_store.ainsert = AsyncMock()
+    vector_store.arefresh_collection = AsyncMock()
+
+    embedder = AsyncMock()
+    embedder.embed = MagicMock(side_effect=lambda text: [0.1, 0.2, 0.3])
+
+    sync = RagflowKbSync(AsyncMock(), AsyncMock(), client=client, vector_store=vector_store, embedder=embedder)
+
+    await sync._sync_chunks_to_es(
+        group_name="bot-101-document-index",
+        file_name="syllabus.html",
+        dataset_id="dataset-99",
+        document_ids=["doc-abc"],
+    )
+
+    client.list_chunks_for_document.assert_awaited_once_with("dataset-99", "doc-abc")
+    assert vector_store.ainsert.await_count == 2
+
+    first_call = vector_store.ainsert.await_args_list[0]
+    assert first_call.kwargs["collection_name"] == "bot-101-document-index"
+    assert first_call.kwargs["text"] == "Learning objectives for week 1"
+    assert first_call.kwargs["metadata"]["file_name"] == "syllabus.html"
+
+
+@pytest.mark.asyncio
+async def test_sync_chunks_to_es_skips_empty_chunks(monkeypatch) -> None:
+    """Whitespace-only chunks must not be embedded or inserted."""
+    monkeypatch.setenv("RAGFLOW_API_KEY", "test-key")
+
+    client = AsyncMock()
+    client.list_chunks_for_document = AsyncMock(return_value=[
+        {"content": "   ", "chunk_id": "empty"},
+        {"content": "Valid content here", "chunk_id": "c1"},
+    ])
+
+    vector_store = AsyncMock()
+    vector_store.ainsert = AsyncMock()
+    embedder = AsyncMock()
+    embedder.embed = MagicMock(return_value=[0.1])
+
+    sync = RagflowKbSync(AsyncMock(), AsyncMock(), client=client, vector_store=vector_store, embedder=embedder)
+
+    await sync._sync_chunks_to_es(
+        group_name="bot-document-index",
+        file_name="doc.html",
+        dataset_id="ds-1",
+        document_ids=["doc-1"],
+    )
+
+    assert vector_store.ainsert.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_sync_chunks_to_es_noop_without_vector_store(monkeypatch) -> None:
+    """When no vector_store is wired, the method exits immediately without hitting Ragflow."""
+    monkeypatch.setenv("RAGFLOW_API_KEY", "test-key")
+
+    client = AsyncMock()
+
+    sync = RagflowKbSync(AsyncMock(), AsyncMock(), client=client, vector_store=None, embedder=None)
+
+    await sync._sync_chunks_to_es(
+        group_name="bot-document-index",
+        file_name="doc.html",
+        dataset_id="ds-1",
+        document_ids=["doc-1"],
+    )
+
+    client.list_chunks_for_document.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sync_chunks_to_es_tolerates_list_failure(monkeypatch) -> None:
+    """A Ragflow chunk-list failure must be logged and swallowed, not propagated."""
+    monkeypatch.setenv("RAGFLOW_API_KEY", "test-key")
+
+    client = AsyncMock()
+    client.list_chunks_for_document = AsyncMock(side_effect=RuntimeError("Ragflow list_chunks_for_document failed: boom"))
+
+    vector_store = AsyncMock()
+    vector_store.ainsert = AsyncMock()
+    embedder = AsyncMock()
+    embedder.embed = MagicMock(return_value=[0.1])
+
+    sync = RagflowKbSync(AsyncMock(), AsyncMock(), client=client, vector_store=vector_store, embedder=embedder)
+
+    # Must not raise
+    await sync._sync_chunks_to_es(
+        group_name="bot-document-index",
+        file_name="doc.html",
+        dataset_id="ds-1",
+        document_ids=["doc-1"],
+    )
+
+    vector_store.ainsert.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_sync_native_file_upload_indexes_chunks_into_es(monkeypatch) -> None:
+    """Full pipeline: upload → parse → pull chunks → insert into ES."""
+    monkeypatch.setenv("RAGFLOW_API_KEY", "test-key")
+    monkeypatch.setenv("RAGFLOW_KB_SYNC_ENABLED", "true")
+
+    client = AsyncMock()
+    client.list_documents = AsyncMock(return_value=[])
+    client.upload_document = AsyncMock(return_value=[{"id": "doc-1", "name": "page.txt"}])
+    client.parse_documents = AsyncMock()
+    client.wait_for_documents_parsed = AsyncMock(return_value=True)
+    client.list_chunks_for_document = AsyncMock(return_value=[
+        {"content": "Course overview and objectives", "chunk_id": "c1"},
+    ])
+
+    vector_store = AsyncMock()
+    vector_store.ainsert = AsyncMock()
+    embedder = AsyncMock()
+    embedder.embed = MagicMock(return_value=[0.5, 0.6])
+
+    mysql_api = AsyncMock()
+    mysql_api.groups.retrieve = AsyncMock(return_value=_mock_group_record(name="bot-document-index"))
+
+    sync = RagflowKbSync(AsyncMock(), mysql_api, client=client, vector_store=vector_store, embedder=embedder)
+    sync._ensure_dataset_for_group = AsyncMock(
+        return_value={"ragflow_dataset_id": "dataset-1", "ragflow_dataset_name": "bot-document-index"}
+    )
+    sync._sync_chat_for_document_group = AsyncMock()
+
+    await sync.sync_native_file_upload(
+        group_name="bot-document-index",
+        file_name="page.html",
+        file_bytes=b"<html><body>Course overview</body></html>",
+        strategy="PARAGRAPH",
+        group_config=GroupConfig(
+            name="bot-document-index",
+            type="DOCUMENT",
+            llm_model_id=1,
+            embedding_model_id=2,
+            rerank_model_id=0,
+        ),
+    )
+
+    client.parse_documents.assert_awaited_once_with("dataset-1", ["doc-1"])
+    client.wait_for_documents_parsed.assert_awaited_once_with("dataset-1", ["doc-1"])
+    client.list_chunks_for_document.assert_awaited_once_with("dataset-1", "doc-1")
+    vector_store.ainsert.assert_awaited_once()
+
+    insert_kwargs = vector_store.ainsert.await_args.kwargs
+    assert insert_kwargs["collection_name"] == "bot-document-index"
+    assert insert_kwargs["text"] == "Course overview and objectives"
+
+
+@pytest.mark.asyncio
+async def test_sync_native_file_upload_es_metadata_uses_original_filename(monkeypatch) -> None:
+    """ES metadata file_name must match the MySQL record (original name, not post-parse .txt)
+    so that delete_file()'s adelete_by_query(field='file_name') cleans up correctly."""
+    monkeypatch.setenv("RAGFLOW_API_KEY", "test-key")
+    monkeypatch.setenv("RAGFLOW_KB_SYNC_ENABLED", "true")
+
+    client = AsyncMock()
+    client.list_documents = AsyncMock(return_value=[])
+    client.upload_document = AsyncMock(return_value=[{"id": "doc-1", "name": "page.txt"}])
+    client.parse_documents = AsyncMock()
+    client.wait_for_documents_parsed = AsyncMock(return_value=True)
+    client.list_chunks_for_document = AsyncMock(return_value=[
+        {"content": "Some content", "chunk_id": "c1"},
+    ])
+
+    vector_store = AsyncMock()
+    vector_store.ainsert = AsyncMock()
+    embedder = AsyncMock()
+    embedder.embed = MagicMock(return_value=[0.1])
+
+    mysql_api = AsyncMock()
+    mysql_api.groups.retrieve = AsyncMock(return_value=_mock_group_record(name="bot-document-index"))
+
+    sync = RagflowKbSync(AsyncMock(), mysql_api, client=client, vector_store=vector_store, embedder=embedder)
+    sync._ensure_dataset_for_group = AsyncMock(
+        return_value={"ragflow_dataset_id": "dataset-1", "ragflow_dataset_name": "bot-document-index"}
+    )
+    sync._sync_chat_for_document_group = AsyncMock()
+
+    await sync.sync_native_file_upload(
+        group_name="bot-document-index",
+        file_name="learning_outcomes.html",  # original .html name stored in MySQL
+        file_bytes=b"<html><body>Learning outcomes content</body></html>",
+        strategy="PARAGRAPH",
+        group_config=GroupConfig(
+            name="bot-document-index",
+            type="DOCUMENT",
+            llm_model_id=1,
+            embedding_model_id=2,
+            rerank_model_id=0,
+        ),
+    )
+
+    insert_kwargs = vector_store.ainsert.await_args.kwargs
+    # Must use the original .html name so delete_file() can clean up by file_name
+    assert insert_kwargs["metadata"]["file_name"] == "learning_outcomes.html"
+
+
+@pytest.mark.asyncio
+async def test_sync_native_file_upload_skips_es_when_parse_times_out(monkeypatch) -> None:
+    """If Ragflow parse times out, ES insertion must be skipped entirely."""
+    monkeypatch.setenv("RAGFLOW_API_KEY", "test-key")
+    monkeypatch.setenv("RAGFLOW_KB_SYNC_ENABLED", "true")
+
+    client = AsyncMock()
+    client.list_documents = AsyncMock(return_value=[])
+    client.upload_document = AsyncMock(return_value=[{"id": "doc-1", "name": "guide.txt"}])
+    client.parse_documents = AsyncMock()
+    client.wait_for_documents_parsed = AsyncMock(return_value=False)  # timeout
+    client.list_chunks_for_document = AsyncMock()
+
+    vector_store = AsyncMock()
+    vector_store.ainsert = AsyncMock()
+    embedder = AsyncMock()
+    embedder.embed = MagicMock(return_value=[0.1])
+
+    mysql_api = AsyncMock()
+    mysql_api.groups.retrieve = AsyncMock(return_value=_mock_group_record(name="bot-document-index"))
+
+    sync = RagflowKbSync(AsyncMock(), mysql_api, client=client, vector_store=vector_store, embedder=embedder)
+    sync._ensure_dataset_for_group = AsyncMock(
+        return_value={"ragflow_dataset_id": "dataset-1", "ragflow_dataset_name": "bot-document-index"}
+    )
+    sync._sync_chat_for_document_group = AsyncMock()
+
+    await sync.sync_native_file_upload(
+        group_name="bot-document-index",
+        file_name="guide.docx",
+        file_bytes=b"binary docx content",
+        strategy="ALSYLLABUS",
+        group_config=GroupConfig(
+            name="bot-document-index",
+            type="DOCUMENT",
+            llm_model_id=1,
+            embedding_model_id=2,
+            rerank_model_id=0,
+        ),
+    )
+
+    client.list_chunks_for_document.assert_not_awaited()
+    vector_store.ainsert.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_list_chunks_for_document_paginates(monkeypatch) -> None:
+    """list_chunks_for_document must paginate until a partial page is returned."""
+    from unittest.mock import MagicMock
+    from criadex.index.ragflow_objects.kb_client import RagflowKbClient
+
+    def _make_chunk(content: str):
+        c = MagicMock()
+        c.content = content
+        c.id = f"chunk-{content[:4]}"
+        return c
+
+    page1 = [_make_chunk(f"chunk content {i}") for i in range(100)]
+    page2 = [_make_chunk(f"page2 content {i}") for i in range(40)]
+
+    mock_doc = MagicMock()
+    mock_doc.list_chunks.side_effect = [page1, page2]
+
+    client = RagflowKbClient(api_key="test-key")
+    client._rag = MagicMock()
+
+    # Patch Document constructor to return our mock_doc
+    with patch(
+        "criadex.index.ragflow_objects.kb_client.Document",
+        return_value=mock_doc,
+    ):
+        chunks = await client.list_chunks_for_document("dataset-1", "doc-1", page_size=100)
+
+    assert len(chunks) == 140
+    assert chunks[0]["content"] == "chunk content 0"
+    assert chunks[100]["content"] == "page2 content 0"
+    assert mock_doc.list_chunks.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_list_chunks_for_document_returns_empty_on_ragflow_error(monkeypatch) -> None:
+    """A Ragflow SDK error in list_chunks must be wrapped and re-raised as RuntimeError."""
+    from unittest.mock import MagicMock
+    from criadex.index.ragflow_objects.kb_client import RagflowKbClient
+
+    mock_doc = MagicMock()
+    mock_doc.list_chunks.side_effect = Exception("internal server error")
+
+    client = RagflowKbClient(api_key="test-key")
+    client._rag = MagicMock()
+
+    with patch(
+        "criadex.index.ragflow_objects.kb_client.Document",
+        return_value=mock_doc,
+    ):
+        with pytest.raises(RuntimeError, match="list_chunks_for_document failed"):
+            await client.list_chunks_for_document("dataset-1", "doc-1")
+
+
+# Chat ownership regression tests 
+
+@pytest.mark.asyncio
+async def test_chat_dict_includes_permission_and_tenant_id() -> None:
+    """_chat_to_dict must expose permission and tenant_id so resource_is_owned()
+    returns True for API-key-owned chats (permission='me') and the orphan sweep
+    can delete them during group deletion."""
+    from criadex.index.ragflow_objects.kb_client import RagflowKbClient
+
+    client = RagflowKbClient(api_key="test-key")
+    client._rag = MagicMock()
+    chat_obj = _mock_chat_obj(id="chat-1", name="bot", dataset_ids=["ds-1"])
+    chat_obj.permission = "me"
+    chat_obj.tenant_id = "tenant-abc"
+    client._rag.list_chats.return_value = [chat_obj]
+
+    chats = await client.list_chats()
+
+    assert len(chats) == 1
+    assert chats[0]["permission"] == "me"
+    assert chats[0]["tenant_id"] == "tenant-abc"
+
+
+@pytest.mark.asyncio
+async def test_sync_group_delete_cleans_orphan_chat_when_link_has_no_chat_id(monkeypatch) -> None:
+    """When ragflow_chat_id is absent from the link (e.g. bot was created while the
+    UnboundLocalError bug prevented chat linking), sync_group_delete must still find
+    and delete the Ragflow chat via the name-based orphan sweep.
+
+    Before the _chat_to_dict fix, resource_is_owned() always returned False for chats
+    so the orphan sweep was a no-op and the chat persisted in the Ragflow web UI even
+    after the Moodle course block was removed."""
+    monkeypatch.setenv("RAGFLOW_API_KEY", "test-key")
+    monkeypatch.setenv("RAGFLOW_KB_SYNC_ENABLED", "true")
+
+    client = AsyncMock()
+    client.delete_datasets = AsyncMock()
+    client.delete_chats = AsyncMock()
+    client.list_datasets = AsyncMock(return_value=[])
+    client.list_chats = AsyncMock(return_value=[
+        {"id": "orphan-chat", "name": "my-bot", "permission": "me", "tenant_id": None},
+    ])
+    from criadex.index.ragflow_objects.kb_client import RagflowKbClient
+    client._already_gone_error = RagflowKbClient._already_gone_error
+
+    sync = RagflowKbSync(AsyncMock(), AsyncMock(), client=client)
+    sync._read_link = AsyncMock(return_value={
+        "group_name": "my-bot-document-index",
+        "ragflow_dataset_id": "ds-1",
+        "ragflow_dataset_name": "my-bot-document-index",
+        "ragflow_chat_id": None,
+    })
+    sync._delete_link = AsyncMock()
+
+    await sync.sync_group_delete(group_name="my-bot-document-index")
+
+    # Dataset deleted by direct ID (no ownership check)
+    client.delete_datasets.assert_awaited()
+    deleted_dataset_ids = client.delete_datasets.await_args_list[0][0][0]
+    assert "ds-1" in deleted_dataset_ids
+
+    # Chat deleted via orphan sweep — this was the broken path before the fix
+    client.delete_chats.assert_awaited()
+    deleted_chat_ids = client.delete_chats.await_args_list[0][0][0]
+    assert "orphan-chat" in deleted_chat_ids
+
+    sync._delete_link.assert_awaited_once_with("my-bot-document-index")
+
+
+@pytest.mark.asyncio
+async def test_sync_group_delete_orphan_chat_sweep_skips_unowned(monkeypatch) -> None:
+    """Orphan sweep must not delete Ragflow chats that aren't owned by this API key
+    (permission != 'me' and no RAGFLOW_TENANT_ID match)."""
+    monkeypatch.setenv("RAGFLOW_API_KEY", "test-key")
+    monkeypatch.setenv("RAGFLOW_KB_SYNC_ENABLED", "true")
+    monkeypatch.delenv("RAGFLOW_TENANT_ID", raising=False)
+
+    client = AsyncMock()
+    client.delete_chats = AsyncMock()
+    client.delete_datasets = AsyncMock()
+    client.list_datasets = AsyncMock(return_value=[])
+    client.list_chats = AsyncMock(return_value=[
+        {"id": "foreign-chat", "name": "my-bot", "permission": "team", "tenant_id": "other-tenant"},
+    ])
+    from criadex.index.ragflow_objects.kb_client import RagflowKbClient
+    client._already_gone_error = RagflowKbClient._already_gone_error
+
+    sync = RagflowKbSync(AsyncMock(), AsyncMock(), client=client)
+    sync._read_link = AsyncMock(return_value={
+        "group_name": "my-bot-document-index",
+        "ragflow_dataset_id": None,
+        "ragflow_dataset_name": "my-bot-document-index",
+        "ragflow_chat_id": None,
+    })
+    sync._delete_link = AsyncMock()
+
+    await sync.sync_group_delete(group_name="my-bot-document-index")
+
+    client.delete_chats.assert_not_awaited()

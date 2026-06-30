@@ -27,6 +27,7 @@ import aiomysql
 from elasticsearch import NotFoundError as ESNotFoundError
 from criadex.bot.bot import Bot
 from criadex.cache.cache import Cache
+from criadex.cache.api import CriadexCacheAPI
 from criadex.database.api import GroupDatabaseAPI
 from criadex.schemas import MySQLCredentials, ElasticsearchCredentials, GroupConfig, GroupExistsError, IndexType, GroupNotFoundError, DocumentExistsError, DocumentNotFoundError, IndexNotFoundError
 from criadex.database.tables.groups import GroupsModel
@@ -69,6 +70,8 @@ class Criadex:
         self.vector_store = None
         self.bot = None
         self.cache = None
+        self._redis_pool = None
+        self._redis_api: Optional[CriadexCacheAPI] = None
         self.event = Event()
         self._active = {}
         self.graph_store = GroupGraphStore()
@@ -138,7 +141,7 @@ class Criadex:
         from criadex.migrations.runner import MigrationRunner
         await MigrationRunner(self.mysql_pool).run_pending()
 
-        self.kb_sync = RagflowKbSync(self.mysql_pool, self.mysql_api)
+        # kb_sync is wired with vector_store/embedder after those are initialised below.
 
         # Seed catalog templates only when tables are empty (non-testing).
         if config.APP_MODE != AppMode.TESTING:
@@ -188,9 +191,39 @@ class Criadex:
         self.vector_store.embedding_dims = self.embedding_dims
         self.retriever = RagflowRetriever(self.vector_store, self.embedder)
 
+        self.kb_sync = RagflowKbSync(
+            self.mysql_pool,
+            self.mysql_api,
+            vector_store=self.vector_store,
+            embedder=self.embedder,
+        )
+
         # Criadex features
         self.bot = Bot(self.vector_store, self.embedder, event=self.event)
         self.cache = Cache(self.mysql_api, event=self.event)
+
+        # Redis cache (optional — falls back to in-process LRU when unconfigured)
+        if config.REDIS_CREDENTIALS is not None:
+            try:
+                from redis import asyncio as aioredis
+                rc = config.REDIS_CREDENTIALS
+                self._redis_pool = aioredis.ConnectionPool(
+                    host=rc.host,
+                    port=rc.port,
+                    password=rc.password,
+                    db=rc.db,
+                    max_connections=int(os.getenv("REDIS_MAX_CONNECTIONS", "20")),
+                    socket_timeout=float(os.getenv("REDIS_SOCKET_TIMEOUT_SECONDS", "3")),
+                    socket_connect_timeout=float(os.getenv("REDIS_CONNECT_TIMEOUT_SECONDS", "3")),
+                    health_check_interval=int(os.getenv("REDIS_HEALTH_CHECK_INTERVAL_SECONDS", "30")),
+                )
+                self._redis_api = CriadexCacheAPI(pool=self._redis_pool)
+                logging.info("Criadex Redis cache connected (host=%s db=%s)", rc.host, rc.db)
+            except Exception as exc:
+                logging.warning("Criadex Redis cache unavailable, falling back to in-process cache: %s", exc)
+                self._redis_pool = None
+                self._redis_api = None
+
         await self._recover_graph_jobs()
         # Example: emit event hooks for search/insert/delete
         # self.event.on(Event.SEARCH, lambda query: logging.info(f"Search event: {query}"))
@@ -410,6 +443,7 @@ class Criadex:
                 gc.collect()
 
         await self.mysql_api.documents.insert(document_name=file_name, group_id=group_id)
+        await self._invalidate_search_cache(group_name)
         await self.mark_graph_stale(group_name=group_name, reason="content_uploaded")
 
         if self.kb_sync is not None:
@@ -422,6 +456,39 @@ class Criadex:
             )
 
         return total_tokens
+
+    async def insert_native_file(
+        self,
+        group_name: str,
+        file_name: str,
+        file_bytes: bytes,
+        strategy: Optional[str] = None,
+        content_type: Optional[str] = None,
+    ) -> None:
+        """Upload a raw file to Ragflow for parsing.
+
+        strategy=None / "GENERIC": raw upload, Ragflow's native parser handles it.
+        strategy="ALSYLLABUS" etc.: pre-process locally to UTF-8 text first.
+        """
+        group_id = await self.get_id(name=group_name)
+
+        if await self.mysql_api.documents.exists(group_id=group_id, document_name=file_name):
+            raise DocumentExistsError()
+
+        await self.mysql_api.documents.insert(document_name=file_name, group_id=group_id)
+        await self._invalidate_search_cache(group_name)
+        await self.mark_graph_stale(group_name=group_name, reason="content_uploaded")
+
+        if self.kb_sync is not None:
+            self._schedule_kb_sync(
+                self.kb_sync.sync_native_file_upload(
+                    group_name=group_name,
+                    file_name=file_name,
+                    file_bytes=file_bytes,
+                    strategy=strategy,
+                    content_type=content_type,
+                )
+            )
 
     async def delete_file(self, group_name: str, document_name: str) -> None:
         group_id: int = await self.get_id(name=group_name)
@@ -437,6 +504,7 @@ class Criadex:
 
         await self.mysql_api.assets.delete_all_document_assets(document_id=document.id)
         await self.mysql_api.documents.delete(group_id=group_id, document_name=document.name)
+        await self._invalidate_search_cache(group_name)
         await self.mark_graph_stale(group_name=group_name, reason="content_deleted")
 
         if self.kb_sync is not None:
@@ -450,9 +518,6 @@ class Criadex:
     async def update_file(self, group_name: str, file_name: str, file_contents: dict, file_metadata: dict) -> int:
         await self.delete_file(group_name=group_name, document_name=file_name)
         result = await self.insert_file(group_name=group_name, file_name=file_name, file_contents=file_contents, file_metadata=file_metadata)
-        # Clear cache for this group/file after update
-        if self.cache:
-            self.cache.clear()
         await self.mark_graph_stale(group_name=group_name, reason="content_updated")
         return result
 
@@ -485,30 +550,49 @@ class Criadex:
         await self.mysql_api.shutdown()
         self.mysql_pool.close()
         await self.mysql_pool.wait_closed()
+
+        redis_pool = getattr(self, "_redis_pool", None)
+        if redis_pool is not None:
+            try:
+                await redis_pool.disconnect(inuse_connections=True)
+            except Exception:
+                pass
+
         # Give the async loop a moment to close the connection
         await asyncio.sleep(0.25)
 
-    # Example methods to show event usage (replace with your actual logic)
+    async def _invalidate_search_cache(self, group_name: str) -> None:
+        """Invalidate all cached search results for a group (Redis + in-process)."""
+        if self._redis_api is not None:
+            await self._redis_api.search_results.invalidate_group(group_name)
+        if self.cache:
+            self.cache.clear()
+
     async def search(self, group_name: str, query: SearchConfig, top_k=10, query_filter: Optional[dict] = None):
         if not await self.exists(name=group_name):
             raise GroupNotFoundError()
 
-        # Use bot for semantic search and cache results
         self.event.emit(Event.SEARCH, query=query)
-        
-        # Create a hashable key from the Pydantic model
-        cache_key = query.model_dump_json()
-        
-        cached = self.cache.get(cache_key)
-        if cached:
-            return cached # Return the cached result
-        
-        # If not cached, perform the search
-        results = await self.bot.search(group_name, query.query, top_k=query.top_k, query_filter=query_filter)
-        
-        # Cache the new result
-        self.cache.set(cache_key, results)
-        
+
+        if self._redis_api is not None:
+            cache_key = self._redis_api.search_results.build_key(
+                group_name=group_name, query=query.query, top_k=query.top_k
+            )
+            cached = await self._redis_api.search_results.get(cache_key)
+            if cached is not None:
+                from criadex.index.schemas import IndexResponse
+                return IndexResponse(**cached)
+            results = await self.bot.search(group_name, query.query, top_k=query.top_k, query_filter=query_filter)
+            await self._redis_api.search_results.set(cache_key, results)
+        else:
+            # In-process LRU fallback — key includes group_name to prevent cross-group collisions
+            cache_key = f"{group_name}:{query.model_dump_json()}"
+            cached = self.cache.get(cache_key)
+            if cached is not None:
+                return cached
+            results = await self.bot.search(group_name, query.query, top_k=query.top_k, query_filter=query_filter)
+            self.cache.set(cache_key, results)
+
         return results
 
     async def _group_documents(self, group_name: str, size: int = 200) -> list[str]:

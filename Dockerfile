@@ -1,6 +1,6 @@
 #           BASIC FILE SETUP
 
-FROM        python:3.10.13-slim-bullseye AS base
+FROM        python:3.12-slim-bookworm AS base
 
 LABEL       author="Isaac Kogan" maintainer="koganisa@yorku.ca"
 

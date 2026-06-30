@@ -20,7 +20,7 @@ from app.core.security import get_api_key_group
 from app.core import config
 from app.core.schemas import AppMode
 from app.core.route import CriaRouter
-from . import delete, list, search, update, upload
+from . import delete, list, search, update, upload, upload_file
 
 router = CriaRouter(
     tags=["Group Content"],
@@ -29,6 +29,7 @@ router = CriaRouter(
 
 router.include_views(
     upload.view,
+    upload_file.view,
     update.view,
     delete.view,
     search.view,

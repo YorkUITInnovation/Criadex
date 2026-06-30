@@ -20,8 +20,15 @@ urlextract==1.8.0
 html5lib==1.1
 
 
-# Ragflow for semantic search and workflow
-ragflow==0.0.1
+# Redis async client (optional search result cache)
+redis[asyncio]>=5.0.0
+
+# Ragflow native SDK (matches Ragflow server v0.26.2; requires Python >=3.12)
+ragflow-sdk==0.26.0
+
+# Local document parsers (ALSYLLABUS/FR, PARAGRAPH) — ported from CriaParse
+mammoth==1.7.1
+beautifulsoup4==4.12.3
 
 
 # Testing

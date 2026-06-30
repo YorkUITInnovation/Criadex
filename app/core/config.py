@@ -20,7 +20,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-from criadex.schemas import ElasticsearchCredentials, MySQLCredentials
+from criadex.schemas import ElasticsearchCredentials, MySQLCredentials, RedisCredentials
 from .schemas import AppMode, check_env_path
 
 ENV_PATH: str = os.environ.get('ENV_PATH', ".env")
@@ -79,6 +79,18 @@ MYSQL_CREDENTIALS: MySQLCredentials = MySQLCredentials(
     username=os.environ["MYSQL_USERNAME"],
     database=os.environ["MYSQL_DATABASE"],
     password=os.environ.get("MYSQL_PASSWORD"),
+)
+
+# Redis Config (optional — cache is disabled when REDIS_HOST is unset)
+REDIS_CREDENTIALS: Optional[RedisCredentials] = (
+    RedisCredentials(
+        host=os.environ["REDIS_HOST"],
+        port=int(os.environ.get("REDIS_PORT", "6379")),
+        password=os.environ.get("REDIS_PASSWORD"),
+        db=int(os.environ.get("REDIS_DB", "2")),
+    )
+    if os.environ.get("REDIS_HOST", "").strip()
+    else None
 )
 
 # Set the Tiktoken cache directory

@@ -147,10 +147,60 @@ class RagflowKbSync:
         mysql_pool: Pool,
         mysql_api: GroupDatabaseAPI,
         client: Optional[RagflowKbClient] = None,
+        vector_store=None,
+        embedder=None,
     ) -> None:
         self._pool = mysql_pool
         self._mysql_api = mysql_api
         self._client = client or RagflowKbClient()
+        self._vector_store = vector_store
+        self._embedder = embedder
+
+    async def _sync_chunks_to_es(
+        self,
+        *,
+        group_name: str,
+        file_name: str,
+        dataset_id: str,
+        document_ids: list[str],
+    ) -> None:
+        """Pull Ragflow-parsed chunks and insert them into the Criadex Elasticsearch index."""
+        if not self._vector_store or not self._embedder:
+            return
+        for doc_id in document_ids:
+            try:
+                chunks = await self._client.list_chunks_for_document(dataset_id, doc_id)
+                for i, chunk in enumerate(chunks):
+                    text = chunk.get("content", "")
+                    if not text.strip():
+                        continue
+                    embedding = self._embedder.embed(text)
+                    await self._vector_store.ainsert(
+                        collection_name=group_name,
+                        doc_id=f"{file_name}-{doc_id}-{i}",
+                        embedding=embedding,
+                        text=text,
+                        metadata={
+                            "file_name": file_name,
+                            "updated_at": int(time.time() * 1000),
+                        },
+                    )
+                refresh = getattr(self._vector_store, "arefresh_collection", None)
+                if callable(refresh):
+                    await refresh(collection_name=group_name)
+                logger.info(
+                    "Indexed %d Ragflow chunks into ES for '%s' in group '%s'",
+                    len(chunks),
+                    file_name,
+                    group_name,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to sync Ragflow chunks to ES for doc '%s' in group '%s': %s",
+                    doc_id,
+                    group_name,
+                    exc,
+                )
 
     async def _group_exists(self, group_name: str) -> bool:
         """Return False when a background sync task races group deletion."""
@@ -589,6 +639,13 @@ class RagflowKbSync:
                         chat_id=chat_id,
                     )
                     return chat_id
+                # No owned chat found with this name — cannot recover from duplicate.
+                logger.warning(
+                    "Ragflow chat '%s' already exists but no owned instance found for group '%s'; skipping",
+                    chat_name,
+                    group_name,
+                )
+                return None
             elif "parsed file" in exc_str:
                 # Dataset has no parsed documents yet — create chat unlinked (dataset_ids=[]).
                 logger.info(
@@ -777,6 +834,122 @@ class RagflowKbSync:
         except Exception as exc:
             logger.warning(
                 "Ragflow KB sync skipped for document '%s' in group '%s': %s",
+                file_name,
+                group_name,
+                exc,
+            )
+
+    async def sync_native_file_upload(
+        self,
+        *,
+        group_name: str,
+        file_name: str,
+        file_bytes: bytes,
+        group_config: Optional[GroupConfig] = None,
+        strategy: Optional[str] = None,
+        content_type: Optional[str] = None,
+    ) -> None:
+        """Upload file bytes to Ragflow, optionally pre-processing with a local parser strategy.
+
+        strategy=None or "GENERIC": raw upload, Ragflow's native parser handles the file.
+        strategy="ALSYLLABUS" etc.: pre-process locally to UTF-8 text, then upload .txt.
+        """
+        if not kb_sync_enabled() or not should_sync_group_to_ragflow(group_name):
+            return
+
+        try:
+            if group_config is None:
+                group = await self._mysql_api.groups.retrieve(name=group_name)
+                if group is None:
+                    return
+                group_config = GroupConfig(
+                    name=group_name,
+                    type=IndexType(group.type).name,
+                    llm_model_id=group.llm_model_id,
+                    embedding_model_id=group.embedding_model_id,
+                    rerank_model_id=group.rerank_model_id,
+                )
+
+            # Keep the original name (matches MySQL record) for ES metadata so
+            # delete_file()'s adelete_by_query(field="file_name") cleans up correctly.
+            original_file_name = file_name
+
+            # Pre-process file bytes when a local parser strategy is requested.
+            if strategy and strategy != "GENERIC":
+                try:
+                    from criadex.parsers.models import ParserStrategy
+                    from criadex.parsers.parse import parse_to_bytes
+                    ps = ParserStrategy(strategy)
+                    file_bytes, file_name = parse_to_bytes(
+                        ps, file_bytes, filename=file_name, content_type=content_type
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Local parser '%s' failed for '%s' in group '%s'; uploading raw bytes: %s",
+                        strategy,
+                        file_name,
+                        group_name,
+                        exc,
+                    )
+
+            document_ids: list[str] = []
+            dataset_id = ""
+            for attempt in range(3):
+                if not await self._group_exists(group_name):
+                    return
+                link = await self._ensure_dataset_for_group(group_config)
+                dataset_id = str(link.get("ragflow_dataset_id") or "")
+                if not dataset_id:
+                    return
+
+                try:
+                    existing_docs = await self._client.list_documents(dataset_id, name=file_name)
+                    existing_ids = [str(doc.get("id")) for doc in existing_docs if doc.get("id")]
+                    if existing_ids:
+                        await self._client.delete_documents(dataset_id, existing_ids)
+
+                    uploaded = await self._client.upload_document(dataset_id, file_name, file_bytes)
+                    document_ids = [str(doc.get("id")) for doc in uploaded if doc.get("id")]
+                    if document_ids:
+                        await self._client.parse_documents(dataset_id, document_ids)
+                        parsed = await self._client.wait_for_documents_parsed(dataset_id, document_ids)
+                        if not parsed:
+                            logger.warning(
+                                "Ragflow native parse did not complete in time for '%s' in group '%s'",
+                                file_name,
+                                group_name,
+                            )
+                        else:
+                            await self._sync_chunks_to_es(
+                                group_name=group_name,
+                                file_name=original_file_name,
+                                dataset_id=dataset_id,
+                                document_ids=document_ids,
+                            )
+                    break
+                except RuntimeError as exc:
+                    if attempt < 2 and dataset_access_error(exc):
+                        await self._delete_link(group_name)
+                        continue
+                    raise
+
+            if group_name.endswith(DOCUMENT_INDEX_SUFFIX) and dataset_id:
+                if await self._group_exists(group_name):
+                    await self._sync_chat_for_document_group(
+                        group_name=group_name,
+                        dataset_id=dataset_id,
+                        llm_model_id=group_config.llm_model_id,
+                    )
+
+            logger.info(
+                "Native-uploaded '%s' to Ragflow dataset %s (%s)",
+                file_name,
+                dataset_id,
+                group_name,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Ragflow native upload skipped for '%s' in group '%s': %s",
                 file_name,
                 group_name,
                 exc,

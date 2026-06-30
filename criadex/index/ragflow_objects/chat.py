@@ -20,7 +20,7 @@ import json
 import os
 import logging
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 
 from criadex.index.ragflow_objects.model_ids import (
@@ -184,7 +184,7 @@ class RagflowChatAgent:
 
             # Dialog doesn't exist, create it
             now_ms = int(time.time() * 1000)
-            now_dt = datetime.utcnow()
+            now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
 
             insert_query = """
             INSERT INTO dialog (

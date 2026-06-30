@@ -174,6 +174,15 @@ class ElasticsearchCredentials(BaseModel):
     password: Optional[str] = None
 
 
+class RedisCredentials(BaseModel):
+    """Credentials for the optional Redis cache instance."""
+
+    host: str
+    port: int = 6379
+    password: Optional[str] = None
+    db: int = 2
+
+
 class IndexActivatedError(RuntimeError):
     """
     Thrown if the index is already activated
