@@ -512,6 +512,32 @@ Response (200 OK):
 }
 ```
 
+### 4.6 Upload Raw File (Native Ragflow Parse)
+POST /groups/{group_name}/content/upload/file
+
+Upload a raw file (PDF, DOCX, HTML, TXT, …) straight to Ragflow for native parsing — replaces CriaParse. Unlike §4.1, which takes already-parsed nodes, this takes raw bytes as multipart form data.
+
+Request:
+```bash
+curl -X POST "${HOST}:${PORT}/groups/test-group-gemini/content/upload/file" \
+  -H "x-api-key: ${API_KEY}" \
+  -F "file=@syllabus.pdf" \
+  -F "strategy=GENERIC"
+```
+
+`strategy` is optional (default `GENERIC`) — one of `GENERIC`, `ALSYLLABUS`, `ALSYLLABUSFR`, `PARAGRAPH` (the latter three pre-process the file to plain text before handing it to Ragflow). `filename_override` is also optional.
+
+Response (200 OK):
+```json
+{
+  "status": 200,
+  "message": "File queued for native Ragflow parsing.",
+  "timestamp": "<timestamp>",
+  "code": "SUCCESS",
+  "document_name": "syllabus.pdf"
+}
+```
+
 ---
 
 ## 5. Model Management
@@ -732,6 +758,51 @@ Response (200 OK):
 }
 ```
 
+#### 5.2.5 Rerank with Cohere
+POST /models/{model_id}/rerank
+
+Request:
+```bash
+curl -X POST "${HOST}:${PORT}/models/5/rerank" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: ${API_KEY}" \
+  -d '{
+    "query": "best?",
+    "documents": [
+      {
+        "text": "A"
+      },
+      {
+        "text": "B"
+      },
+      {
+        "text": "C"
+      }
+    ]
+  }'
+```
+
+Response (200 OK):
+```json
+{
+  "status": 200,
+  "message": "Successfully reranked documents using Cohere model 5.",
+  "timestamp": "<timestamp>",
+  "code": "SUCCESS",
+  "reranked_documents": [
+    {
+      "text": "A"
+    },
+    {
+      "text": "B"
+    },
+    {
+      "text": "C"
+    }
+  ]
+}
+```
+
 ### 5.3 Generic Models (OpenAI-Compatible)
 
 #### 5.3.1 Create Generic Model
@@ -838,27 +909,44 @@ Response (200 OK):
 }
 ```
 
-#### 5.2.5 Rerank with Cohere
-POST /models/{model_id}/rerank
+### 5.4 Ragflow Model Sync
+
+Ragflow-configured models don't have their own `/models/ragflow/*` CRUD routes — they're synced into the same generic model registry as §5.3 above, tagged `provider_type=ragflow`, then read back with the generic routes (e.g. `GET /models/ragflow/list`).
+
+#### 5.4.1 Sync Ragflow Models
+POST /models/ragflow/sync
+
+Reads active models from Ragflow's tenant config (scoped to `RAGFLOW_TENANT_ID`) and mirrors them into the generic model registry.
 
 Request:
 ```bash
-curl -X POST "${HOST}:${PORT}/models/5/rerank" \
+curl -X POST "${HOST}:${PORT}/models/ragflow/sync" \
+  -H "x-api-key: ${API_KEY}"
+```
+
+Response (200 OK):
+```json
+{
+  "status": 200,
+  "message": "Successfully synced Ragflow models.",
+  "timestamp": "<timestamp>",
+  "code": "SUCCESS",
+  "stats": {"created": 2, "updated": 1, "removed": 0, "skipped": 0}
+}
+```
+
+#### 5.4.2 Deduplicate Generic Models
+POST /models/dedupe
+
+Merges duplicate generic models sharing the same `provider_type` + `api_model`, keeping the lowest ID and remapping any group references. Requires master key in production.
+
+Request:
+```bash
+curl -X POST "${HOST}:${PORT}/models/dedupe" \
   -H "Content-Type: application/json" \
   -H "x-api-key: ${API_KEY}" \
   -d '{
-    "query": "best?",
-    "documents": [
-      {
-        "text": "A"
-      },
-      {
-        "text": "B"
-      },
-      {
-        "text": "C"
-      }
-    ]
+    "provider_type": "ragflow"
   }'
 ```
 
@@ -866,20 +954,11 @@ Response (200 OK):
 ```json
 {
   "status": 200,
-  "message": "Successfully reranked documents using Cohere model 5.",
+  "message": "Duplicate generic models merged.",
   "timestamp": "<timestamp>",
   "code": "SUCCESS",
-  "reranked_documents": [
-    {
-      "text": "A"
-    },
-    {
-      "text": "B"
-    },
-    {
-      "text": "C"
-    }
-  ]
+  "merged_groups": 1,
+  "deleted_models": 2
 }
 ```
 
@@ -889,15 +968,19 @@ Response (200 OK):
 
 ### 6.1 Ragflow Agents
 
-#### 6.1.0 Ensure Dialog
-POST /models/ragflow/{model_id}/dialog/ensure
+`app/controllers/agents/azure_agents/` has an older, near-identical copy of these routes, but it's never imported into the app — it's dead code, not a reachable parallel API. Use the routes below.
 
-Initialize the backing Ragflow dialog before starting a chat.
+#### 6.1.0 Ensure Dialog
+POST /ragflow/chats/{chat_id}/ensure
+
+Initialize the backing Ragflow dialog for a chat ID before starting a chat, creating it if it doesn't exist yet.
 
 Request:
 ```bash
-curl -X POST "${HOST}:${PORT}/models/ragflow/1/dialog/ensure" \
-  -H "x-api-key: ${API_KEY}"
+curl -X POST "${HOST}:${PORT}/ragflow/chats/your-chat-id/ensure" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: ${API_KEY}" \
+  -d '{}'
 ```
 
 Response (200 OK):
@@ -907,7 +990,8 @@ Response (200 OK):
   "message": "Dialog ensured successfully",
   "timestamp": "<timestamp>",
   "code": "SUCCESS",
-  "dialog_id": "your-dialog-id"
+  "chat_id": "your-chat-id",
+  "created": true
 }
 ```
 
@@ -1010,28 +1094,35 @@ Response (200 OK):
 #### 6.1.4 Related Prompts
 POST /models/{model_id}/related_prompts
 
+Asks the bot's own Ragflow dialog to suggest up to 3 short follow-up questions, given the prior question/answer pair. Reuses the same chat-completion path as a real reply — there's no separate "related prompts" model in Ragflow. Needs a `chat_id`; returns an empty list (not an error) if `chat_id` is missing or generation fails.
+
 Request:
 ```bash
 curl -X POST "${HOST}:${PORT}/models/1/related_prompts" \
   -H "Content-Type: application/json" \
   -H "x-api-key: ${API_KEY}" \
-  -d '{}'
+  -d '{
+    "llm_prompt": "What is AI?",
+    "llm_reply": "AI is artificial intelligence.",
+    "chat_id": "your-chat-id"
+  }'
 ```
 
 Response (200 OK):
 ```json
 {
   "agent_response": {
-    "message": null,
+    "related_prompts": [
+      {"label": "How is AI used today?", "prompt": "How is AI used today?", "llm_generated": true}
+    ],
     "usage": [
       {
-        "completion_tokens": 0,
-        "prompt_tokens": 0,
-        "total_tokens": 0,
+        "completion_tokens": 12,
+        "prompt_tokens": 40,
+        "total_tokens": 52,
         "usage_label": "RelatedPromptsAgent"
       }
-    ],
-    "related_prompts": []
+    ]
   }
 }
 ```
@@ -1053,5 +1144,122 @@ Response (200 OK):
 ```json
 {
   "transformed_text": "CHANGE"
+}
+```
+
+---
+
+## 7. GraphRAG
+
+A lightweight relationship graph built on top of a group's documents, used for graph-expanded search.
+
+### 7.1 Build Group Graph
+POST /groups/{group_name}/build_graph
+
+Request:
+```bash
+curl -X POST "${HOST}:${PORT}/groups/test-group-gemini/build_graph" \
+  -H "x-api-key: ${API_KEY}"
+```
+
+Response (200 OK):
+```json
+{"status": 200, "code": "SUCCESS", "group_name": "test-group-gemini", "job_id": "...", "state": "QUEUED", "source": "none", "progress": 0}
+```
+
+### 7.2 Get Group Graph Status
+GET /groups/{group_name}/graph_status
+
+Request:
+```bash
+curl "${HOST}:${PORT}/groups/test-group-gemini/graph_status" \
+  -H "x-api-key: ${API_KEY}"
+```
+
+Response (200 OK):
+```json
+{
+  "status": 200, "code": "SUCCESS", "group_name": "test-group-gemini",
+  "graph": {"status": "NOT_BUILT", "source": "none", "node_count": 0, "edge_count": 0, "top_entities": []},
+  "job": null
+}
+```
+
+### 7.3 Graph Search Group
+POST /groups/{group_name}/graph_search
+
+Same as §1.4 Query a Group, but with graph-based query expansion when a graph is available.
+
+Request:
+```bash
+curl -X POST "${HOST}:${PORT}/groups/test-group-gemini/graph_search" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: ${API_KEY}" \
+  -d '{
+    "query": "test",
+    "max_hops": 1,
+    "max_expansion_terms": 8,
+    "auto_build": false
+  }'
+```
+
+Response (200 OK):
+```json
+{"status": 200, "code": "SUCCESS", "nodes": [], "assets": [], "search_units": 0, "graph_metadata": {}}
+```
+
+---
+
+## 8. Ragflow Integration
+
+Operational endpoints that keep Criadex's stored dataset/chat ID links in sync with Ragflow.
+
+### 8.1 Ragflow Webhook Receiver
+POST /ragflow/webhook
+
+Receives Ragflow event webhooks and schedules a background reconcile. Requires a `Bearer` token matching the server's `RAGFLOW_API_KEY` — this is meant to be called by Ragflow, not end users.
+
+Request:
+```bash
+curl -X POST "${HOST}:${PORT}/ragflow/webhook" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${RAGFLOW_API_KEY}" \
+  -d '{"event": "document.parsed", "resource": {}}'
+```
+
+Response (202 Accepted): reconcile scheduled in the background.
+
+### 8.2 Ragflow Reconcile
+POST /ragflow/reconcile
+
+Synchronously runs a full reconcile between Ragflow and Criadex's group links.
+
+Request:
+```bash
+curl -X POST "${HOST}:${PORT}/ragflow/reconcile" \
+  -H "x-api-key: ${API_KEY}"
+```
+
+Response (200 OK):
+```json
+{"status": 200, "code": "SUCCESS", "message": "Reconcile completed", "stats": {}}
+```
+
+### 8.3 Get Group Ragflow Link
+GET /ragflow/link/{group_name}
+
+Returns the stored dataset/chat link for a group. Debugging use — requires master API key.
+
+Request:
+```bash
+curl "${HOST}:${PORT}/ragflow/link/test-group-gemini" \
+  -H "x-api-key: ${API_KEY}"
+```
+
+Response (200 OK):
+```json
+{
+  "status": 200, "code": "SUCCESS", "message": "Link found",
+  "stats": {"ragflow_dataset_id": "...", "ragflow_dataset_name": "...", "ragflow_chat_id": "..."}
 }
 ```
