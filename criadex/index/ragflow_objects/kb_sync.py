@@ -4,6 +4,7 @@ Sync Criadex groups and documents to Ragflow datasets and chat assistants.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -80,7 +81,17 @@ def resolve_requires_documents(config: GroupConfig) -> bool:
 
     bot_name = bot_name_from_group(config.name)
     if bot_name and bot_name.isdigit():
+        logger.warning(
+            "requires_documents not provided for group '%s'; inferred False from bare numeric bot name. "
+            "Upgrade Criabot to pass requires_documents explicitly to remove this fallback.",
+            config.name,
+        )
         return False
+    logger.warning(
+        "requires_documents not provided for group '%s'; inferred True from non-numeric bot name. "
+        "Upgrade Criabot to pass requires_documents explicitly to remove this fallback.",
+        config.name,
+    )
     return True
 
 
@@ -201,6 +212,66 @@ class RagflowKbSync:
                     group_name,
                     exc,
                 )
+
+    async def _retry_es_sync_after_parse(
+        self,
+        *,
+        group_name: str,
+        file_name: str,
+        dataset_id: str,
+        document_ids: list[str],
+        retry_interval: float = 15.0,
+        max_attempts: int = 40,  # 40 × 15s ≈ 10 min max
+    ) -> None:
+        """Background retry: keep polling Ragflow until all documents are parsed,
+        then drive _sync_chunks_to_es.
+
+        Called when wait_for_documents_parsed() times out so ES is not permanently
+        empty for a file that Ragflow eventually finishes parsing.
+        """
+        target_ids = set(str(d) for d in document_ids if d)
+        for attempt in range(max_attempts):
+            await asyncio.sleep(retry_interval)
+            if not await self._group_exists(group_name):
+                logger.debug("ES sync retry aborted: group '%s' deleted", group_name)
+                return
+            try:
+                docs = await self._client.list_documents(dataset_id)
+                by_id = {str(doc.get("id")): doc for doc in docs if doc.get("id")}
+                all_done = all(
+                    str((by_id.get(doc_id) or {}).get("run", "")).upper() == "DONE"
+                    for doc_id in target_ids
+                )
+                if all_done:
+                    await self._sync_chunks_to_es(
+                        group_name=group_name,
+                        file_name=file_name,
+                        dataset_id=dataset_id,
+                        document_ids=document_ids,
+                    )
+                    logger.info(
+                        "ES sync retry succeeded for '%s' in group '%s' (attempt %d)",
+                        file_name,
+                        group_name,
+                        attempt + 1,
+                    )
+                    return
+            except Exception as exc:
+                logger.warning(
+                    "ES sync retry poll failed for '%s' in group '%s' (attempt %d): %s",
+                    file_name,
+                    group_name,
+                    attempt + 1,
+                    exc,
+                )
+
+        logger.warning(
+            "ES sync retry gave up for '%s' in group '%s' after %d attempts; "
+            "document will remain unavailable until re-uploaded or reconciled.",
+            file_name,
+            group_name,
+            max_attempts,
+        )
 
     async def _group_exists(self, group_name: str) -> bool:
         """Return False when a background sync task races group deletion."""
@@ -378,9 +449,7 @@ class RagflowKbSync:
         dataset_id: str,
         group_name: str,
     ) -> None:
-        import asyncio as _asyncio
-
-        _asyncio.create_task(
+        asyncio.create_task(
             self._retry_chat_link_after_parse(
                 chat_id=chat_id,
                 dataset_id=dataset_id,
@@ -530,9 +599,8 @@ class RagflowKbSync:
         max_attempts: int = 30,  # 30 × 10s = 5 min max
     ) -> None:
         """Background retry: keep trying to link chat to dataset until parsing completes."""
-        import asyncio as _asyncio
         for attempt in range(max_attempts):
-            await _asyncio.sleep(retry_interval)
+            await asyncio.sleep(retry_interval)
             try:
                 await self._client.patch_chat(chat_id, dataset_ids=[dataset_id])
                 logger.info(
@@ -915,9 +983,18 @@ class RagflowKbSync:
                         parsed = await self._client.wait_for_documents_parsed(dataset_id, document_ids)
                         if not parsed:
                             logger.warning(
-                                "Ragflow native parse did not complete in time for '%s' in group '%s'",
+                                "Ragflow native parse did not complete in time for '%s' in group '%s'; "
+                                "scheduling background ES sync retry.",
                                 file_name,
                                 group_name,
+                            )
+                            asyncio.create_task(
+                                self._retry_es_sync_after_parse(
+                                    group_name=group_name,
+                                    file_name=original_file_name,
+                                    dataset_id=dataset_id,
+                                    document_ids=document_ids,
+                                )
                             )
                         else:
                             await self._sync_chunks_to_es(

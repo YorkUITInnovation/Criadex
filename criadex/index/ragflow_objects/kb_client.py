@@ -47,52 +47,53 @@ def _default_api_key() -> str:
 
 
 class _TimedRAGFlow(RAGFlow):
-    """RAGFlow subclass that enforces per-request timeouts on all HTTP verbs."""
+    """RAGFlow subclass that enforces per-request timeouts on all HTTP verbs.
+
+    Uses a shared requests.Session per instance so TCP connections are reused
+    across SDK calls (keep-alive) rather than reconnecting on every request.
+    """
 
     def __init__(self, api_key: str, base_url: str, timeout: float) -> None:
         super().__init__(api_key, base_url)
         self._timeout = timeout
+        self._session = requests.Session()
+        self._session.headers.update(self.authorization_header)
 
     def post(self, path, json=None, stream=False, files=None):
-        return requests.post(
+        return self._session.post(
             url=self.api_url + path,
             json=json,
-            headers=self.authorization_header,
             stream=stream,
             files=files,
             timeout=self._timeout,
         )
 
     def get(self, path, params=None, json=None):
-        return requests.get(
+        return self._session.get(
             url=self.api_url + path,
             params=params,
-            headers=self.authorization_header,
             json=json,
             timeout=self._timeout,
         )
 
     def delete(self, path, json):
-        return requests.delete(
+        return self._session.delete(
             url=self.api_url + path,
             json=json,
-            headers=self.authorization_header,
             timeout=self._timeout,
         )
 
     def put(self, path, json):
-        return requests.put(
+        return self._session.put(
             url=self.api_url + path,
             json=json,
-            headers=self.authorization_header,
             timeout=self._timeout,
         )
 
     def patch(self, path, json):
-        return requests.patch(
+        return self._session.patch(
             url=self.api_url + path,
             json=json,
-            headers=self.authorization_header,
             timeout=self._timeout,
         )
 

@@ -1405,7 +1405,99 @@ async def test_sync_native_file_upload_skips_es_when_parse_times_out(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_list_chunks_for_document_paginates(monkeypatch) -> None:
+async def test_sync_native_file_upload_schedules_es_retry_on_parse_timeout(monkeypatch) -> None:
+    """When parse times out, sync_native_file_upload must schedule a background
+    _retry_es_sync_after_parse task instead of silently dropping the ES sync."""
+    import asyncio
+    monkeypatch.setenv("RAGFLOW_API_KEY", "test-key")
+    monkeypatch.setenv("RAGFLOW_KB_SYNC_ENABLED", "true")
+
+    client = AsyncMock()
+    client.list_documents = AsyncMock(return_value=[])
+    client.upload_document = AsyncMock(return_value=[{"id": "doc-1", "name": "guide.txt"}])
+    client.parse_documents = AsyncMock()
+    client.wait_for_documents_parsed = AsyncMock(return_value=False)  # timeout
+
+    mysql_api = AsyncMock()
+    mysql_api.groups.retrieve = AsyncMock(return_value=_mock_group_record(name="bot-document-index"))
+
+    sync = RagflowKbSync(AsyncMock(), mysql_api, client=client)
+    sync._ensure_dataset_for_group = AsyncMock(
+        return_value={"ragflow_dataset_id": "ds-1", "ragflow_dataset_name": "bot-document-index"}
+    )
+    sync._sync_chat_for_document_group = AsyncMock()
+
+    retry_calls: list = []
+
+    async def _fake_retry(**kwargs):
+        retry_calls.append(kwargs)
+
+    sync._retry_es_sync_after_parse = _fake_retry
+
+    created_tasks: list = []
+    original_create_task = asyncio.create_task
+
+    def _patched_create_task(coro, **kwargs):
+        created_tasks.append(coro)
+        return original_create_task(coro, **kwargs)
+
+    with patch("criadex.index.ragflow_objects.kb_sync.asyncio.create_task", _patched_create_task):
+        await sync.sync_native_file_upload(
+            group_name="bot-document-index",
+            file_name="guide.docx",
+            file_bytes=b"content",
+            group_config=GroupConfig(
+                name="bot-document-index",
+                type="DOCUMENT",
+                llm_model_id=1,
+                embedding_model_id=2,
+                rerank_model_id=0,
+            ),
+        )
+
+    assert len(created_tasks) >= 1, "Expected a background task to be scheduled on parse timeout"
+
+
+@pytest.mark.asyncio
+async def test_retry_es_sync_calls_sync_chunks_when_documents_done(monkeypatch) -> None:
+    """_retry_es_sync_after_parse must call _sync_chunks_to_es as soon as all
+    target documents report run='DONE'."""
+    import asyncio
+    monkeypatch.setenv("RAGFLOW_API_KEY", "test-key")
+
+    client = AsyncMock()
+    # First poll: still running; second poll: done
+    client.list_documents = AsyncMock(
+        side_effect=[
+            [{"id": "doc-1", "name": "guide.txt", "run": "RUNNING"}],
+            [{"id": "doc-1", "name": "guide.txt", "run": "DONE"}],
+        ]
+    )
+
+    mysql_api = AsyncMock()
+    mysql_api.groups.retrieve = AsyncMock(return_value=_mock_group_record(name="bot-document-index"))
+
+    sync = RagflowKbSync(AsyncMock(), mysql_api, client=client)
+    sync_calls: list = []
+
+    async def _fake_sync_chunks(**kwargs):
+        sync_calls.append(kwargs)
+
+    sync._sync_chunks_to_es = _fake_sync_chunks
+
+    with patch("asyncio.sleep", new=AsyncMock()):
+        await sync._retry_es_sync_after_parse(
+            group_name="bot-document-index",
+            file_name="guide.docx",
+            dataset_id="ds-1",
+            document_ids=["doc-1"],
+            retry_interval=0.0,
+            max_attempts=5,
+        )
+
+    assert len(sync_calls) == 1
+    assert sync_calls[0]["file_name"] == "guide.docx"
+    assert sync_calls[0]["group_name"] == "bot-document-index"
     """list_chunks_for_document must paginate until a partial page is returned."""
     from unittest.mock import MagicMock
     from criadex.index.ragflow_objects.kb_client import RagflowKbClient

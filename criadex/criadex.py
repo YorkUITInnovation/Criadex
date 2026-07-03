@@ -122,11 +122,36 @@ class Criadex:
 
         asyncio.create_task(_runner())
 
+    async def _ensure_database_exists(self) -> None:
+        """
+        Create the configured MySQL database if it doesn't exist yet.
+
+        aiomysql.create_pool(db=...) fails hard with "Unknown database" if the
+        database hasn't been created — connect without a database first to
+        create it, matching Criabot's bootstrap pattern.
+        """
+        bootstrap_conn = await aiomysql.connect(
+            host=self.mysql_credentials.host,
+            port=self.mysql_credentials.port,
+            user=self.mysql_credentials.username,
+            password=self.mysql_credentials.password,
+            autocommit=True,
+        )
+        try:
+            async with bootstrap_conn.cursor() as cursor:
+                await cursor.execute(
+                    f"CREATE DATABASE IF NOT EXISTS `{self.mysql_credentials.database}` "
+                    f"CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+                )
+        finally:
+            bootstrap_conn.close()
+
     async def initialize(self) -> None:
         """
         Initialize Criadex
         """
         # MySQL
+        await self._ensure_database_exists()
         self.mysql_pool = await aiomysql.create_pool(
             host=self.mysql_credentials.host,
             port=self.mysql_credentials.port,
